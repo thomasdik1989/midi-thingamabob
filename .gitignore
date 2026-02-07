@@ -1,0 +1,40 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Compiled files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# MIDI files (user data)
+*.mid
+*.midi
+
+# Temporary files
+*.tmp
+*.temp
