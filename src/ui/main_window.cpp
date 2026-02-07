@@ -285,37 +285,56 @@ void MainWindow::handleFileDialogs() {
     if (showSaveFileDialog_) {
         ImGui::OpenPopup("Save MIDI File");
         showSaveFileDialog_ = false;
+        saveErrorMessage_.clear();
     }
     
     if (ImGui::BeginPopupModal("Save MIDI File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter file path:");
         ImGui::SetNextItemWidth(400);
+        
+        bool tryToSave = false;
         if (ImGui::InputText("##filepath", filePathBuffer_, sizeof(filePathBuffer_),
                             ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::string path = filePathBuffer_;
-            // Add .mid extension if not present
-            if (path.find(".mid") == std::string::npos && path.find(".MID") == std::string::npos) {
-                path += ".mid";
-            }
-            if (app_.saveFileAs(path)) {
-                ImGui::CloseCurrentPopup();
-            }
+            tryToSave = true;
+        }
+        
+        // Show error message if any
+        if (!saveErrorMessage_.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::TextWrapped("%s", saveErrorMessage_.c_str());
+            ImGui::PopStyleColor();
         }
         
         ImGui::Separator();
         if (ImGui::Button("Save", ImVec2(120, 0))) {
-            std::string path = filePathBuffer_;
-            if (path.find(".mid") == std::string::npos && path.find(".MID") == std::string::npos) {
-                path += ".mid";
-            }
-            if (app_.saveFileAs(path)) {
-                ImGui::CloseCurrentPopup();
-            }
+            tryToSave = true;
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
         }
+        
+        if (tryToSave) {
+            std::string path = filePathBuffer_;
+            
+            // Check for empty path
+            if (path.empty()) {
+                saveErrorMessage_ = "Please enter a file path.";
+            } else {
+                // Add .mid extension if not present
+                if (path.find(".mid") == std::string::npos && path.find(".MID") == std::string::npos) {
+                    path += ".mid";
+                }
+                
+                if (app_.saveFileAs(path)) {
+                    saveErrorMessage_.clear();
+                    ImGui::CloseCurrentPopup();
+                } else {
+                    saveErrorMessage_ = "Failed to save file. Check that the path is valid and you have write permission.";
+                }
+            }
+        }
+        
         ImGui::EndPopup();
     }
 }

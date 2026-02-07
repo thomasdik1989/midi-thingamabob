@@ -36,7 +36,16 @@ Or if already cloned:
 git submodule update --init --recursive
 ```
 
-### Build
+### Quick Build (Recommended)
+
+```bash
+./build.sh          # Build release version
+./build.sh run      # Build and run
+./build.sh debug    # Build debug version
+./build.sh clean    # Clean build directory
+```
+
+### Manual Build
 
 ```bash
 mkdir build
@@ -48,7 +57,9 @@ cmake --build .
 ### Run
 
 ```bash
-./MidiEditor
+./build/MidiEditor
+# Or with a MIDI file:
+./build.sh run /path/to/file.mid
 ```
 
 ## Controls

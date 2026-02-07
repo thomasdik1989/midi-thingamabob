@@ -192,31 +192,64 @@ bool loadMidiFile(const std::string& filepath, Project& project) {
 }
 
 bool saveMidiFile(const std::string& filepath, const Project& project) {
-    smf::MidiFile midifile;
-    midifile.setTicksPerQuarterNote(project.ticks_per_quarter);
-    
-    // Track 0: tempo and metadata
-    midifile.addTrack();
-    midifile.addTempo(0, 0, project.tempo_bpm);
-    
-    // One track per channel
-    for (const auto& track : project.tracks) {
-        int trackIndex = midifile.addTrack();
-        
-        // Program change at the beginning
-        midifile.addPatchChange(trackIndex, 0, track.channel, track.program);
-        
-        // Add all notes
-        for (const auto& note : track.notes) {
-            midifile.addNoteOn(trackIndex, note.start_tick, track.channel, note.pitch, note.velocity);
-            midifile.addNoteOff(trackIndex, note.start_tick + note.duration, track.channel, note.pitch);
-        }
+    // Ensure we have a valid filepath
+    if (filepath.empty()) {
+        fprintf(stderr, "Save error: Empty filepath\n");
+        return false;
     }
     
-    // Sort events by time
-    midifile.sortTracks();
-    
-    return midifile.write(filepath);
+    try {
+        smf::MidiFile midifile;
+        
+        // Use absolute ticks (will be converted to delta when writing)
+        midifile.absoluteTicks();
+        midifile.setTicksPerQuarterNote(project.ticks_per_quarter);
+        
+        // Add tracks: track 0 for tempo/meta, plus one for each channel
+        int numTracks = static_cast<int>(project.tracks.size()) + 1;
+        if (numTracks > 1) {
+            midifile.addTracks(numTracks - 1);  // MidiFile starts with 1 track, add the rest
+        }
+        
+        // Add tempo to track 0
+        midifile.addTempo(0, 0, project.tempo_bpm);
+        
+        // Add notes to tracks
+        for (size_t i = 0; i < project.tracks.size(); ++i) {
+            const auto& track = project.tracks[i];
+            int trackIndex = static_cast<int>(i) + 1;  // Track 0 is for tempo
+            
+            // Program change at the beginning
+            midifile.addPatchChange(trackIndex, 0, track.channel, track.program);
+            
+            // Add all notes
+            for (const auto& note : track.notes) {
+                midifile.addNoteOn(trackIndex, static_cast<int>(note.start_tick), 
+                                   track.channel, note.pitch, note.velocity);
+                midifile.addNoteOff(trackIndex, static_cast<int>(note.start_tick + note.duration), 
+                                    track.channel, note.pitch);
+            }
+        }
+        
+        // Sort events by time
+        midifile.sortTracks();
+        
+        // Try to write the file
+        bool success = midifile.write(filepath);
+        
+        if (!success) {
+            fprintf(stderr, "Failed to write MIDI file: %s\n", filepath.c_str());
+        }
+        
+        return success;
+        
+    } catch (const std::exception& e) {
+        fprintf(stderr, "Exception while saving MIDI file: %s\n", e.what());
+        return false;
+    } catch (...) {
+        fprintf(stderr, "Unknown exception while saving MIDI file\n");
+        return false;
+    }
 }
 
 } // namespace midi

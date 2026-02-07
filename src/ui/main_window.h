@@ -39,6 +39,7 @@ private:
     bool showSaveFileDialog_ = false;
     std::string fileDialogPath_;
     char filePathBuffer_[512] = {0};
+    std::string saveErrorMessage_;
     
     // UI state
     bool firstFrame_ = true;

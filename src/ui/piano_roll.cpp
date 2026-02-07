@@ -706,6 +706,18 @@ void PianoRoll::handleNoteResizing(ImVec2 canvasPos, ImVec2 canvasSize) {
 
 void PianoRoll::handleScrollAndZoom(ImVec2 canvasPos, ImVec2 canvasSize) {
     ImGuiIO& io = ImGui::GetIO();
+    const auto& project = app_.getProject();
+    
+    // Calculate max scroll based on song length (add some extra space)
+    uint32_t totalTicks = project.getTotalTicks();
+    float maxScrollX = static_cast<float>(totalTicks) + (canvasSize.x / pixelsPerTick_) * 0.5f;
+    
+    // Middle mouse button drag for panning
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+        ImVec2 delta = io.MouseDelta;
+        scrollX_ -= delta.x / pixelsPerTick_;
+        scrollY_ -= delta.y;
+    }
     
     // Mouse wheel scrolling/zooming
     if (ImGui::IsWindowHovered() && io.MouseWheel != 0) {
@@ -725,19 +737,52 @@ void PianoRoll::handleScrollAndZoom(ImVec2 canvasPos, ImVec2 canvasSize) {
                 
                 // Adjust scroll to keep mouse position stable
                 scrollX_ = mouseTickBefore - (mousePos.x - canvasPos.x) / pixelsPerTick_;
+                
+                // Recalculate max scroll with new zoom
+                maxScrollX = static_cast<float>(totalTicks) + (canvasSize.x / pixelsPerTick_) * 0.5f;
             }
         } else if (io.KeyShift) {
-            // Horizontal scroll
-            scrollX_ -= io.MouseWheel * 200 / pixelsPerTick_;
+            // Horizontal scroll with shift+wheel
+            scrollX_ -= io.MouseWheel * 500 / pixelsPerTick_;
         } else {
-            // Vertical scroll
+            // Vertical scroll (default) AND horizontal scroll without modifier
             scrollY_ -= io.MouseWheel * 50;
         }
     }
     
+    // Horizontal scroll with shift+wheel OR just wheel if Alt is held
+    if (ImGui::IsWindowHovered() && io.MouseWheelH != 0) {
+        scrollX_ -= io.MouseWheelH * 500 / pixelsPerTick_;
+    }
+    
+    // Arrow keys for scrolling when window is focused
+    if (ImGui::IsWindowFocused()) {
+        float scrollSpeed = 100.0f / pixelsPerTick_;
+        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
+            scrollX_ -= scrollSpeed * io.DeltaTime * 5;
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
+            scrollX_ += scrollSpeed * io.DeltaTime * 5;
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
+            scrollY_ -= 200 * io.DeltaTime;
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
+            scrollY_ += 200 * io.DeltaTime;
+        }
+        
+        // Home/End keys for quick navigation
+        if (ImGui::IsKeyPressed(ImGuiKey_Home)) {
+            scrollX_ = 0;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_End)) {
+            scrollX_ = maxScrollX - canvasSize.x / pixelsPerTick_;
+        }
+    }
+    
     // Clamp scroll
-    scrollX_ = std::max(0.0f, scrollX_);
-    scrollY_ = std::clamp(scrollY_, 0.0f, 127.0f * noteHeight_ - canvasSize.y);
+    scrollX_ = std::clamp(scrollX_, 0.0f, std::max(0.0f, maxScrollX));
+    scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, 127.0f * noteHeight_ - canvasSize.y));
 }
 
 float PianoRoll::tickToX(uint32_t tick, ImVec2 canvasPos, ImVec2 canvasSize) const {
