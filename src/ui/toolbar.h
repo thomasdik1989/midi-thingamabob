@@ -6,9 +6,9 @@
 class Toolbar {
 public:
     Toolbar(App& app, midi::MidiPlayer& player);
-    
+
     void render();
-    
+
 private:
     App& app_;
     midi::MidiPlayer& player_;

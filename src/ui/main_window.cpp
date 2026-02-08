@@ -19,30 +19,30 @@ void MainWindow::render() {
     auto now = std::chrono::steady_clock::now();
     double deltaTime = std::chrono::duration<double>(now - lastFrame_).count();
     lastFrame_ = now;
-    
+
     // Update playback
     if (app_.isPlaying()) {
         app_.advancePlayhead(deltaTime);
     }
     midiPlayer_.update(app_.getProject(), app_.getPlayheadTick(), app_.isPlaying());
-    
+
     // Handle keyboard shortcuts
     handleKeyboardShortcuts();
-    
+
     // Render menu bar
     renderMenuBar();
-    
+
     // Render dockspace
     renderDockspace();
-    
+
     // Render panels
     toolbar_.render();
     trackPanel_.render();
     pianoRoll_.render();
-    
+
     // Handle file dialogs
     handleFileDialogs();
-    
+
     firstFrame_ = false;
 }
 
@@ -68,7 +68,7 @@ void MainWindow::renderMenuBar() {
             }
             ImGui::EndMenu();
         }
-        
+
         if (ImGui::BeginMenu("Edit")) {
             if (ImGui::MenuItem("Undo", "Ctrl+Z", false, app_.canUndo())) {
                 app_.undo();
@@ -95,18 +95,18 @@ void MainWindow::renderMenuBar() {
             }
             ImGui::EndMenu();
         }
-        
+
         if (ImGui::BeginMenu("Track")) {
             if (ImGui::MenuItem("Add Track")) {
                 app_.addTrack();
             }
-            if (ImGui::MenuItem("Remove Track", nullptr, false, 
+            if (ImGui::MenuItem("Remove Track", nullptr, false,
                                 app_.getProject().tracks.size() > 1)) {
                 app_.removeTrack(app_.getSelectedTrackIndex());
             }
             ImGui::EndMenu();
         }
-        
+
         if (ImGui::BeginMenu("Transport")) {
             if (ImGui::MenuItem("Play/Pause", "Space")) {
                 app_.togglePlayback();
@@ -120,7 +120,7 @@ void MainWindow::renderMenuBar() {
             }
             ImGui::EndMenu();
         }
-        
+
         // Display project info on the right
         float windowWidth = ImGui::GetWindowWidth();
         std::string info = app_.getProject().filepath.empty() ? "New Project" : app_.getProject().filepath;
@@ -128,7 +128,7 @@ void MainWindow::renderMenuBar() {
         float textWidth = ImGui::CalcTextSize(info.c_str()).x;
         ImGui::SetCursorPosX(windowWidth - textWidth - 20);
         ImGui::TextDisabled("%s", info.c_str());
-        
+
         ImGui::EndMainMenuBar();
     }
 }
@@ -139,51 +139,51 @@ void MainWindow::renderDockspace() {
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::SetNextWindowViewport(viewport->ID);
-    
+
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
                                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
                                     ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
-    
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    
+
     ImGui::Begin("DockSpace", nullptr, window_flags);
     ImGui::PopStyleVar(3);
-    
+
     ImGuiID dockspace_id = ImGui::GetID("MainDockspace");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
-    
+
     // Setup default layout on first frame
     if (firstFrame_) {
         ImGui::DockBuilderRemoveNode(dockspace_id);
         ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
-        
+
         ImGuiID dock_main = dockspace_id;
         ImGuiID dock_left = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Left, 0.2f, nullptr, &dock_main);
         ImGuiID dock_top = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Up, 0.08f, nullptr, &dock_main);
-        
+
         ImGui::DockBuilderDockWindow("Toolbar", dock_top);
         ImGui::DockBuilderDockWindow("Tracks", dock_left);
         ImGui::DockBuilderDockWindow("Piano Roll", dock_main);
-        
+
         ImGui::DockBuilderFinish(dockspace_id);
     }
-    
+
     ImGui::End();
 }
 
 void MainWindow::handleKeyboardShortcuts() {
     ImGuiIO& io = ImGui::GetIO();
-    
+
     // Don't handle shortcuts if typing in an input field
     if (io.WantTextInput) return;
-    
+
     bool ctrl = io.KeyCtrl;
     bool shift = io.KeyShift;
-    
+
     // File operations
     if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_N)) {
         app_.newProject();
@@ -201,7 +201,7 @@ void MainWindow::handleKeyboardShortcuts() {
     if (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_S)) {
         showSaveDialog();
     }
-    
+
     // Edit operations
     if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_Z)) {
         app_.undo();
@@ -224,7 +224,7 @@ void MainWindow::handleKeyboardShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_Q)) {
         app_.quantizeSelectedNotes();
     }
-    
+
     // Transport
     if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
         app_.togglePlayback();
@@ -250,11 +250,11 @@ void MainWindow::handleFileDialogs() {
         ImGui::OpenPopup("Open MIDI File");
         showOpenFileDialog_ = false;
     }
-    
+
     if (ImGui::BeginPopupModal("Open MIDI File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter file path:");
         ImGui::SetNextItemWidth(400);
-        if (ImGui::InputText("##filepath", filePathBuffer_, sizeof(filePathBuffer_), 
+        if (ImGui::InputText("##filepath", filePathBuffer_, sizeof(filePathBuffer_),
                             ImGuiInputTextFlags_EnterReturnsTrue)) {
             if (app_.loadFile(filePathBuffer_)) {
                 // Send program changes for all tracks
@@ -264,7 +264,7 @@ void MainWindow::handleFileDialogs() {
                 ImGui::CloseCurrentPopup();
             }
         }
-        
+
         ImGui::Separator();
         if (ImGui::Button("Open", ImVec2(120, 0))) {
             if (app_.loadFile(filePathBuffer_)) {
@@ -280,31 +280,31 @@ void MainWindow::handleFileDialogs() {
         }
         ImGui::EndPopup();
     }
-    
+
     // Save file dialog
     if (showSaveFileDialog_) {
         ImGui::OpenPopup("Save MIDI File");
         showSaveFileDialog_ = false;
         saveErrorMessage_.clear();
     }
-    
+
     if (ImGui::BeginPopupModal("Save MIDI File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter file path:");
         ImGui::SetNextItemWidth(400);
-        
+
         bool tryToSave = false;
         if (ImGui::InputText("##filepath", filePathBuffer_, sizeof(filePathBuffer_),
                             ImGuiInputTextFlags_EnterReturnsTrue)) {
             tryToSave = true;
         }
-        
+
         // Show error message if any
         if (!saveErrorMessage_.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
             ImGui::TextWrapped("%s", saveErrorMessage_.c_str());
             ImGui::PopStyleColor();
         }
-        
+
         ImGui::Separator();
         if (ImGui::Button("Save", ImVec2(120, 0))) {
             tryToSave = true;
@@ -313,10 +313,10 @@ void MainWindow::handleFileDialogs() {
         if (ImGui::Button("Cancel", ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
         }
-        
+
         if (tryToSave) {
             std::string path = filePathBuffer_;
-            
+
             // Check for empty path
             if (path.empty()) {
                 saveErrorMessage_ = "Please enter a file path.";
@@ -325,7 +325,7 @@ void MainWindow::handleFileDialogs() {
                 if (path.find(".mid") == std::string::npos && path.find(".MID") == std::string::npos) {
                     path += ".mid";
                 }
-                
+
                 if (app_.saveFileAs(path)) {
                     saveErrorMessage_.clear();
                     ImGui::CloseCurrentPopup();
@@ -334,7 +334,7 @@ void MainWindow::handleFileDialogs() {
                 }
             }
         }
-        
+
         ImGui::EndPopup();
     }
 }

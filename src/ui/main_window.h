@@ -12,35 +12,35 @@ class MainWindow {
 public:
     MainWindow(App& app);
     ~MainWindow();
-    
+
     void render();
-    
+
 private:
     void renderMenuBar();
     void renderDockspace();
     void handleKeyboardShortcuts();
     void handleFileDialogs();
-    
+
     // File dialog helpers
     void showOpenDialog();
     void showSaveDialog();
-    
+
     App& app_;
     Toolbar toolbar_;
     TrackPanel trackPanel_;
     PianoRoll pianoRoll_;
     midi::MidiPlayer midiPlayer_;
-    
+
     // Timing
     std::chrono::steady_clock::time_point lastFrame_;
-    
+
     // File dialog state
     bool showOpenFileDialog_ = false;
     bool showSaveFileDialog_ = false;
     std::string fileDialogPath_;
     char filePathBuffer_[512] = {0};
     std::string saveErrorMessage_;
-    
+
     // UI state
     bool firstFrame_ = true;
 };

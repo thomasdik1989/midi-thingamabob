@@ -16,7 +16,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Electric Piano 2",
     "Harpsichord",
     "Clavinet",
-    
+
     // Chromatic Percussion (8-15)
     "Celesta",
     "Glockenspiel",
@@ -26,7 +26,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Xylophone",
     "Tubular Bells",
     "Dulcimer",
-    
+
     // Organ (16-23)
     "Drawbar Organ",
     "Percussive Organ",
@@ -36,7 +36,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Accordion",
     "Harmonica",
     "Tango Accordion",
-    
+
     // Guitar (24-31)
     "Acoustic Guitar (nylon)",
     "Acoustic Guitar (steel)",
@@ -46,7 +46,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Overdriven Guitar",
     "Distortion Guitar",
     "Guitar Harmonics",
-    
+
     // Bass (32-39)
     "Acoustic Bass",
     "Electric Bass (finger)",
@@ -56,7 +56,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Slap Bass 2",
     "Synth Bass 1",
     "Synth Bass 2",
-    
+
     // Strings (40-47)
     "Violin",
     "Viola",
@@ -66,7 +66,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Pizzicato Strings",
     "Orchestral Harp",
     "Timpani",
-    
+
     // Ensemble (48-55)
     "String Ensemble 1",
     "String Ensemble 2",
@@ -76,7 +76,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Voice Oohs",
     "Synth Voice",
     "Orchestra Hit",
-    
+
     // Brass (56-63)
     "Trumpet",
     "Trombone",
@@ -86,7 +86,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Brass Section",
     "Synth Brass 1",
     "Synth Brass 2",
-    
+
     // Reed (64-71)
     "Soprano Sax",
     "Alto Sax",
@@ -96,7 +96,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "English Horn",
     "Bassoon",
     "Clarinet",
-    
+
     // Pipe (72-79)
     "Piccolo",
     "Flute",
@@ -106,7 +106,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Shakuhachi",
     "Whistle",
     "Ocarina",
-    
+
     // Synth Lead (80-87)
     "Lead 1 (square)",
     "Lead 2 (sawtooth)",
@@ -116,7 +116,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Lead 6 (voice)",
     "Lead 7 (fifths)",
     "Lead 8 (bass + lead)",
-    
+
     // Synth Pad (88-95)
     "Pad 1 (new age)",
     "Pad 2 (warm)",
@@ -126,7 +126,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Pad 6 (metallic)",
     "Pad 7 (halo)",
     "Pad 8 (sweep)",
-    
+
     // Synth Effects (96-103)
     "FX 1 (rain)",
     "FX 2 (soundtrack)",
@@ -136,7 +136,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "FX 6 (goblins)",
     "FX 7 (echoes)",
     "FX 8 (sci-fi)",
-    
+
     // Ethnic (104-111)
     "Sitar",
     "Banjo",
@@ -146,7 +146,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Bagpipe",
     "Fiddle",
     "Shanai",
-    
+
     // Percussive (112-119)
     "Tinkle Bell",
     "Agogo",
@@ -156,7 +156,7 @@ constexpr std::array<std::string_view, 128> GM_INSTRUMENT_NAMES = {{
     "Melodic Tom",
     "Synth Drum",
     "Reverse Cymbal",
-    
+
     // Sound Effects (120-127)
     "Guitar Fret Noise",
     "Breath Noise",

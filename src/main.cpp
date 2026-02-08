@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    
+
     // Customize style for a modern look
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 4.0f;

@@ -18,65 +18,65 @@ public:
     bool loadFile(const std::string& filepath);
     bool saveFile();
     bool saveFileAs(const std::string& filepath);
-    
+
     // Project access
     midi::Project& getProject() { return project_; }
     const midi::Project& getProject() const { return project_; }
-    
+
     // Track management
     void addTrack();
     void removeTrack(int index);
     int getSelectedTrackIndex() const { return selectedTrack_; }
     void setSelectedTrack(int index);
     midi::Track* getSelectedTrack();
-    
+
     // Playback state
     bool isPlaying() const { return playing_; }
     void setPlaying(bool playing) { playing_ = playing; }
     void togglePlayback() { playing_ = !playing_; }
     void stop();
-    
+
     uint32_t getPlayheadTick() const { return playheadTick_; }
     void setPlayheadTick(uint32_t tick) { playheadTick_ = tick; }
     void advancePlayhead(double deltaSeconds);
-    
+
     // Editing state
     midi::GridSnap getGridSnap() const { return gridSnap_; }
     void setGridSnap(midi::GridSnap snap) { gridSnap_ = snap; }
-    
+
     // Undo/Redo system
     void executeCommand(std::unique_ptr<Command> cmd);
     void undo();
     void redo();
     bool canUndo() const;
     bool canRedo() const;
-    
+
     // Note editing helpers
     void deleteSelectedNotes();
     void selectAllNotes();
     void copySelectedNotes();
     void pasteNotes();
     void quantizeSelectedNotes();
-    
+
     // Clipboard
     bool hasClipboard() const { return !clipboard_.empty(); }
-    
+
 private:
     midi::Project project_;
     int selectedTrack_ = 0;
-    
+
     // Playback
     bool playing_ = false;
     uint32_t playheadTick_ = 0;
-    
+
     // Editing
     midi::GridSnap gridSnap_ = midi::GridSnap::Sixteenth;
-    
+
     // Undo/Redo
     std::deque<std::unique_ptr<Command>> undoStack_;
     std::deque<std::unique_ptr<Command>> redoStack_;
     static const size_t MAX_UNDO_HISTORY = 100;
-    
+
     // Clipboard (for copy/paste)
     std::vector<midi::Note> clipboard_;
     uint32_t clipboardBaseTime_ = 0;
@@ -98,7 +98,7 @@ public:
     void execute() override;
     void undo() override;
     std::string getName() const override { return "Add Notes"; }
-    
+
 private:
     App& app_;
     int trackIndex_;
@@ -112,7 +112,7 @@ public:
     void execute() override;
     void undo() override;
     std::string getName() const override { return "Delete Notes"; }
-    
+
 private:
     App& app_;
     int trackIndex_;
@@ -122,12 +122,12 @@ private:
 // Move notes command
 class MoveNotesCommand : public Command {
 public:
-    MoveNotesCommand(App& app, int trackIndex, std::vector<size_t> noteIndices, 
+    MoveNotesCommand(App& app, int trackIndex, std::vector<size_t> noteIndices,
                      int pitchDelta, int32_t tickDelta);
     void execute() override;
     void undo() override;
     std::string getName() const override { return "Move Notes"; }
-    
+
 private:
     App& app_;
     int trackIndex_;
@@ -144,7 +144,7 @@ public:
     void execute() override;
     void undo() override;
     std::string getName() const override { return "Resize Notes"; }
-    
+
 private:
     App& app_;
     int trackIndex_;
@@ -161,7 +161,7 @@ public:
     void execute() override;
     void undo() override;
     std::string getName() const override { return "Change Velocity"; }
-    
+
 private:
     App& app_;
     int trackIndex_;
@@ -177,7 +177,7 @@ public:
     void execute() override;
     void undo() override;
     std::string getName() const override { return "Change Instrument"; }
-    
+
 private:
     App& app_;
     int trackIndex_;
