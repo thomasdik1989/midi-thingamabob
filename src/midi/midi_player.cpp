@@ -117,18 +117,22 @@ void MidiPlayer::update(const Project& project, uint32_t currentTick, bool isPla
         }
     }
     
+    // Check if any track is solo'd (compute once)
+    bool hasSolo = false;
+    for (const auto& t : project.tracks) {
+        if (t.solo) { hasSolo = true; break; }
+    }
+    
     // Check for new notes that should start
     for (const auto& track : project.tracks) {
         if (track.muted) continue;
-        
-        // Check if any track is solo'd
-        bool hasSolo = false;
-        for (const auto& t : project.tracks) {
-            if (t.solo) { hasSolo = true; break; }
-        }
-        
-        // If there's a solo track, only play solo tracks
         if (hasSolo && !track.solo) continue;
+        
+        // Apply track volume/pan to audio synth channel
+        if (useBuiltInSynth_) {
+            audioSynth_.setChannelVolume(track.channel, track.volume);
+            audioSynth_.setChannelPan(track.channel, track.pan);
+        }
         
         for (const auto& note : track.notes) {
             // Check if note starts in the time window since last update

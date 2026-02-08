@@ -38,11 +38,25 @@ struct Project {
     std::string filepath;
     bool modified = false;
     
+    // Time signature
+    int beats_per_bar = 4;        // Numerator (e.g., 4 in 4/4)
+    int beat_unit = 4;            // Denominator (e.g., 4 in 4/4)
+    
+    // Loop region (0 = no loop set)
+    uint32_t loop_start = 0;
+    uint32_t loop_end = 0;
+    bool loop_enabled = false;
+    
     // Time conversion helpers
     double ticksToSeconds(uint32_t ticks) const;
     uint32_t secondsToTicks(double seconds) const;
     double ticksToBeats(uint32_t ticks) const;
     uint32_t beatsToTicks(double beats) const;
+    
+    // Bar/beat helpers using time signature
+    int ticksPerBar() const;
+    int tickToBar(uint32_t tick) const;
+    int tickToBeatInBar(uint32_t tick) const;
     
     // Get total duration
     uint32_t getTotalTicks() const;

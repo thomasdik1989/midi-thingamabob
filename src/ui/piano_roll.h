@@ -16,7 +16,9 @@ private:
     void drawKeyboard(ImDrawList* drawList, ImVec2 pos, ImVec2 size);
     void drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize);
     void drawPlayhead(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize);
+    void drawLoopRegion(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize);
     void drawSelectionBox(ImDrawList* drawList, ImVec2 canvasPos);
+    void drawVelocityLane(ImDrawList* drawList, ImVec2 pos, ImVec2 size);
     
     // Interaction
     void handleInput(ImVec2 canvasPos, ImVec2 canvasSize);
@@ -25,6 +27,7 @@ private:
     void handleNoteDragging(ImVec2 canvasPos, ImVec2 canvasSize);
     void handleNoteResizing(ImVec2 canvasPos, ImVec2 canvasSize);
     void handleScrollAndZoom(ImVec2 canvasPos, ImVec2 canvasSize);
+    void autoFollowPlayhead(ImVec2 canvasPos, ImVec2 canvasSize);
     
     // Coordinate conversion
     float tickToX(uint32_t tick, ImVec2 canvasPos, ImVec2 canvasSize) const;
@@ -54,6 +57,8 @@ private:
     
     // Keyboard width
     static constexpr float KEYBOARD_WIDTH = 80.0f;
+    // Velocity lane height
+    static constexpr float VELOCITY_LANE_HEIGHT = 60.0f;
     
     // Interaction state
     enum class InteractionMode {
@@ -61,7 +66,9 @@ private:
         CreatingNote,
         SelectingBox,
         MovingNotes,
-        ResizingNotes
+        ResizingNotes,
+        SettingLoopRegion,
+        EditingVelocity
     };
     InteractionMode mode_ = InteractionMode::None;
     
@@ -86,4 +93,7 @@ private:
     
     // Keyboard interaction
     int previewingPitch_ = -1;
+    
+    // Velocity editing
+    int velocityEditNoteIndex_ = -1;
 };

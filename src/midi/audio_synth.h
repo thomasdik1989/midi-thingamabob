@@ -31,6 +31,10 @@ public:
     // Program change
     void programChange(int channel, int program);
     
+    // Per-channel volume and pan
+    void setChannelVolume(int channel, float volume);
+    void setChannelPan(int channel, float pan);
+    
     // Volume control (0.0 - 1.0)
     void setMasterVolume(float volume);
     float getMasterVolume() const { return masterVolume_; }

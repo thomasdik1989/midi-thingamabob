@@ -24,21 +24,52 @@ int Track::selectedCount() const {
 }
 
 double Project::ticksToSeconds(uint32_t ticks) const {
-    double beats = static_cast<double>(ticks) / ticks_per_quarter;
-    return beats * 60.0 / tempo_bpm;
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    double bpm = tempo_bpm > 0.0f ? tempo_bpm : 120.0;
+    double beats = static_cast<double>(ticks) / ppq;
+    return beats * 60.0 / bpm;
 }
 
 uint32_t Project::secondsToTicks(double seconds) const {
-    double beats = seconds * tempo_bpm / 60.0;
-    return static_cast<uint32_t>(beats * ticks_per_quarter);
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    double bpm = tempo_bpm > 0.0f ? tempo_bpm : 120.0;
+    double beats = seconds * bpm / 60.0;
+    return static_cast<uint32_t>(beats * ppq);
 }
 
 double Project::ticksToBeats(uint32_t ticks) const {
-    return static_cast<double>(ticks) / ticks_per_quarter;
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    return static_cast<double>(ticks) / ppq;
 }
 
 uint32_t Project::beatsToTicks(double beats) const {
-    return static_cast<uint32_t>(beats * ticks_per_quarter);
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    return static_cast<uint32_t>(beats * ppq);
+}
+
+int Project::ticksPerBar() const {
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    int bpb = beats_per_bar > 0 ? beats_per_bar : 4;
+    int bu = beat_unit > 0 ? beat_unit : 4;
+    // A quarter note = ppq ticks. One beat = ppq * (4 / beat_unit) ticks.
+    return ppq * 4 * bpb / bu;
+}
+
+int Project::tickToBar(uint32_t tick) const {
+    int tpb = ticksPerBar();
+    if (tpb <= 0) tpb = 1;
+    return static_cast<int>(tick / tpb) + 1;
+}
+
+int Project::tickToBeatInBar(uint32_t tick) const {
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    int bu = beat_unit > 0 ? beat_unit : 4;
+    int ticksPerBeat = ppq * 4 / bu;
+    if (ticksPerBeat <= 0) ticksPerBeat = 1;
+    int tpb = ticksPerBar();
+    if (tpb <= 0) tpb = 1;
+    uint32_t tickInBar = tick % tpb;
+    return static_cast<int>(tickInBar / ticksPerBeat) + 1;
 }
 
 uint32_t Project::getTotalTicks() const {
@@ -50,7 +81,7 @@ uint32_t Project::getTotalTicks() const {
         }
     }
     // At minimum, return 4 bars worth of ticks
-    uint32_t minTicks = ticks_per_quarter * 4 * 4; // 4 bars of 4/4
+    uint32_t minTicks = static_cast<uint32_t>(ticksPerBar()) * 4;
     return std::max(maxTick, minTicks);
 }
 

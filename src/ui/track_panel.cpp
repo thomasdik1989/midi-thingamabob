@@ -118,6 +118,28 @@ void TrackPanel::renderTrackItem(int index, midi::Track& track) {
             ImGui::EndCombo();
         }
         
+        // Volume slider
+        ImGui::Text("Vol:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1);
+        float vol = track.volume;
+        if (ImGui::SliderFloat("##volume", &vol, 0.0f, 1.0f, "%.2f")) {
+            track.volume = vol;
+            player_.getAudioSynth().setChannelVolume(track.channel, vol);
+            project.modified = true;
+        }
+        
+        // Pan slider
+        ImGui::Text("Pan:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1);
+        float pan = track.pan;
+        if (ImGui::SliderFloat("##pan", &pan, 0.0f, 1.0f, pan < 0.48f ? "L %.0f" : (pan > 0.52f ? "R %.0f" : "C"), ImGuiSliderFlags_AlwaysClamp)) {
+            track.pan = pan;
+            player_.getAudioSynth().setChannelPan(track.channel, pan);
+            project.modified = true;
+        }
+        
         // Mute/Solo buttons
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
         

@@ -104,10 +104,17 @@ void App::advancePlayhead(double deltaSeconds) {
     uint32_t deltaTicks = project_.secondsToTicks(deltaSeconds);
     playheadTick_ += deltaTicks;
     
-    // Loop back if we reach the end
-    uint32_t totalTicks = project_.getTotalTicks();
-    if (playheadTick_ > totalTicks) {
-        playheadTick_ = 0;
+    // Loop region support
+    if (project_.loop_enabled && project_.loop_end > project_.loop_start) {
+        if (playheadTick_ >= project_.loop_end) {
+            playheadTick_ = project_.loop_start;
+        }
+    } else {
+        // Loop back to start if we reach the end
+        uint32_t totalTicks = project_.getTotalTicks();
+        if (playheadTick_ > totalTicks) {
+            playheadTick_ = 0;
+        }
     }
 }
 
