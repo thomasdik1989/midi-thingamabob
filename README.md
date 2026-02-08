@@ -26,7 +26,7 @@ A simple MIDI editor with a piano roll interface, built with C++ and Dear ImGui.
 ### Clone with submodules
 
 ```bash
-git clone --recursive https://github.com/your-repo/midi-editor.git
+git clone --recursive github.com:thomasdik1989/midi-thingamabob.git
 cd midi-editor
 ```
 
