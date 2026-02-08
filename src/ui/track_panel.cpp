@@ -1,6 +1,8 @@
 #include "track_panel.h"
 #include "../midi/general_midi.h"
 #include <imgui.h>
+#include <algorithm>
+#include <cstring>
 
 TrackPanel::TrackPanel(App& app, midi::MidiPlayer& player)
     : app_(app)

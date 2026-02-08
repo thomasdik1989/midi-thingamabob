@@ -1,3 +1,11 @@
+// Must be defined before <cmath> for M_PI on MSVC
+#define _USE_MATH_DEFINES
+
+// Prevent Windows min/max macros from conflicting with std::min/std::max
+#ifdef _WIN32
+#define NOMINMAX
+#endif
+
 #define MINIAUDIO_IMPLEMENTATION
 #include "../../third_party/miniaudio.h"
 
@@ -6,6 +14,7 @@
 
 #include "audio_synth.h"
 #include <cmath>
+#include <algorithm>
 #include <array>
 #include <atomic>
 
