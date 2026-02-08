@@ -60,6 +60,12 @@ set(SOURCES
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
+# Ensure C++17 is applied to our target (submodules may reset CMAKE_CXX_STANDARD)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+)
+
 target_include_directories(${PROJECT_NAME} PRIVATE 
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/third_party/midifile/include
