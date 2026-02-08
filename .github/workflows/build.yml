@@ -1,0 +1,140 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux
+            artifact: MidiEditor-linux
+          - os: windows-latest
+            name: Windows
+            artifact: MidiEditor-windows
+          - os: macos-latest
+            name: macOS
+            artifact: MidiEditor-macos
+
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libasound2-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols \
+            extra-cmake-modules
+
+      - name: Configure (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cmake --build build --parallel
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release --parallel
+
+      - name: Prepare artifact (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp build/MidiEditor dist/MidiEditor
+          chmod +x dist/MidiEditor
+
+      - name: Prepare artifact (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp build/MidiEditor dist/MidiEditor
+          chmod +x dist/MidiEditor
+
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item build/Release/MidiEditor.exe dist/MidiEditor.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package release archives
+        run: |
+          cd artifacts
+
+          # Linux
+          cd MidiEditor-linux
+          tar czf ../MidiEditor-linux-x86_64.tar.gz MidiEditor
+          cd ..
+
+          # macOS
+          cd MidiEditor-macos
+          tar czf ../MidiEditor-macos-arm64.tar.gz MidiEditor
+          cd ..
+
+          # Windows
+          cd MidiEditor-windows
+          zip ../MidiEditor-windows-x86_64.zip MidiEditor.exe
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/MidiEditor-linux-x86_64.tar.gz
+            artifacts/MidiEditor-macos-arm64.tar.gz
+            artifacts/MidiEditor-windows-x86_64.zip
