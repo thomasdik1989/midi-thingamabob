@@ -98,9 +98,77 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/
 
+  build-mobile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS
+            os: macos-latest
+            platform: iOS
+            artifact: MidiEditorMobile-ios
+          - name: Android
+            os: ubuntu-latest
+            platform: Android
+            artifact: MidiEditorMobile-android
+
+    name: Build Mobile (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build iOS
+        if: matrix.platform == 'iOS'
+        run: |
+          cmake -B build-mobile -G Xcode \
+            -DBUILD_MOBILE=ON \
+            -DMOBILE_PLATFORM=iOS \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build-mobile --config Release -- -sdk iphonesimulator -arch arm64 CODE_SIGNING_ALLOWED=NO
+
+      - name: Prepare iOS artifact
+        if: matrix.platform == 'iOS'
+        run: |
+          mkdir -p dist
+          cp -r build-mobile/Release-iphonesimulator/MidiEditorMobile.app dist/ || true
+
+      - name: Setup Android SDK/NDK
+        if: matrix.platform == 'Android'
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android
+        if: matrix.platform == 'Android'
+        run: |
+          cmake -B build-mobile \
+            -DBUILD_MOBILE=ON \
+            -DMOBILE_PLATFORM=Android \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build-mobile --parallel
+
+      - name: Prepare Android artifact
+        if: matrix.platform == 'Android'
+        run: |
+          mkdir -p dist
+          find build-mobile -name "*.so" -exec cp {} dist/ \;
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, build-mobile]
     runs-on: ubuntu-latest
     permissions:
       contents: write

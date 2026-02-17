@@ -87,6 +87,17 @@ cmake --build .
 - **Ctrl + Z**: Undo
 - **Ctrl + Y**: Redo
 
+## TODOS
+(there are also available in github project)
+- Allow for other soundfonts.
+- Remove std; we should be able to make it work without.
+- Add tests for each of the functionalities so we don't break things.
+- Add more advanced UI for selecting and saving files.
+- Test external midi devices (did copy from example but I need to test this with my ultranova :D)
+- Make mobile UI rotate when the phone rotates.
+- Improve mobile esthetic, it's purely functional now.
+- Fix file browser + add file browser on desktop.
+
 ## License
 
 MIT License
