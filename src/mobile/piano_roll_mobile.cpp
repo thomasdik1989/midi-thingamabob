@@ -11,15 +11,18 @@ PianoRollMobile::PianoRollMobile(App& app, midi::MidiPlayer& player)
 
 void PianoRollMobile::render(float width, float height) {
     ImVec2 windowPos = ImGui::GetCursorScreenPos();
-    ImVec2 canvasSize(width, height);
 
-    // Keyboard area
-    ImVec2 keyboardPos = windowPos;
-    ImVec2 keyboardSize(KEYBOARD_WIDTH, height);
+    // Ruler strip at the top for bar numbers
+    ImVec2 rulerPos(windowPos.x + KEYBOARD_WIDTH, windowPos.y);
+    ImVec2 rulerSize(width - KEYBOARD_WIDTH, RULER_HEIGHT);
 
-    // Grid area (right of keyboard)
-    canvasPos_ = ImVec2(windowPos.x + KEYBOARD_WIDTH, windowPos.y);
-    canvasSize_ = ImVec2(width - KEYBOARD_WIDTH, height);
+    // Keyboard area (below ruler)
+    ImVec2 keyboardPos(windowPos.x, windowPos.y + RULER_HEIGHT);
+    ImVec2 keyboardSize(KEYBOARD_WIDTH, height - RULER_HEIGHT);
+
+    // Grid area (right of keyboard, below ruler)
+    canvasPos_ = ImVec2(windowPos.x + KEYBOARD_WIDTH, windowPos.y + RULER_HEIGHT);
+    canvasSize_ = ImVec2(width - KEYBOARD_WIDTH, height - RULER_HEIGHT);
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
@@ -28,6 +31,7 @@ void PianoRollMobile::render(float width, float height) {
                            IM_COL32(30, 30, 35, 255));
 
     // Draw components
+    drawRuler(drawList, rulerPos, rulerSize);
     drawGrid(drawList, canvasPos_, canvasSize_);
     drawKeyboard(drawList, keyboardPos, keyboardSize);
     drawLoopRegion(drawList, canvasPos_, canvasSize_);
@@ -348,6 +352,53 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
 
 // ========== Drawing ==========
 
+void PianoRollMobile::drawRuler(ImDrawList* drawList, ImVec2 rulerPos, ImVec2 rulerSize) {
+    const auto& project = app_.getProject();
+
+    // Ruler background (slightly lighter than grid)
+    drawList->AddRectFilled(rulerPos,
+        ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
+        IM_COL32(38, 38, 45, 255));
+
+    // Bottom border
+    drawList->AddLine(
+        ImVec2(rulerPos.x, rulerPos.y + rulerSize.y),
+        ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
+        IM_COL32(60, 60, 70, 255));
+
+    drawList->PushClipRect(rulerPos,
+        ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), true);
+
+    int ppq = project.ticks_per_quarter > 0 ? project.ticks_per_quarter : 480;
+    int ticksPerBar = project.ticksPerBar();
+    if (ticksPerBar <= 0) ticksPerBar = ppq * 4;
+
+    uint32_t startTick = static_cast<uint32_t>(std::max(0.0f, scrollX_));
+    uint32_t endTick = static_cast<uint32_t>(scrollX_ + rulerSize.x / pixelsPerTick_);
+
+    int startBar = static_cast<int>(startTick / ticksPerBar);
+    int endBar = static_cast<int>(endTick / ticksPerBar) + 1;
+
+    for (int bar = startBar; bar <= endBar; ++bar) {
+        uint32_t barTick = static_cast<uint32_t>(bar * ticksPerBar);
+        float x = rulerPos.x + (static_cast<float>(barTick) - scrollX_) * pixelsPerTick_;
+
+        // Tick mark
+        drawList->AddLine(
+            ImVec2(x, rulerPos.y + rulerSize.y - 6),
+            ImVec2(x, rulerPos.y + rulerSize.y),
+            IM_COL32(80, 80, 90, 255));
+
+        // Bar number
+        char label[8];
+        snprintf(label, sizeof(label), "%d", bar + 1);
+        drawList->AddText(ImVec2(x + 4, rulerPos.y + 2),
+            IM_COL32(160, 160, 175, 255), label);
+    }
+
+    drawList->PopClipRect();
+}
+
 void PianoRollMobile::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize) {
     const auto& project = app_.getProject();
 
@@ -407,13 +458,6 @@ void PianoRollMobile::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 ca
 
         drawList->AddLine(ImVec2(x, canvasPos.y), ImVec2(x, canvasPos.y + canvasSize.y), color);
 
-        if (isBar && tick >= startTick) {
-            int barNumber = tick / ticksPerBar + 1;
-            char label[16];
-            snprintf(label, sizeof(label), "%d", barNumber);
-            drawList->AddText(ImVec2(x + 4, canvasPos.y + 2), IM_COL32(100, 100, 110, 255), label);
-        }
-
         tick += gridTicks;
     }
 }
@@ -443,10 +487,11 @@ void PianoRollMobile::drawKeyboard(ImDrawList* drawList, ImVec2 pos, ImVec2 size
         drawList->AddRectFilled(ImVec2(pos.x, y), ImVec2(pos.x + keyWidth, y + noteHeight_), keyColor);
         drawList->AddRect(ImVec2(pos.x, y), ImVec2(pos.x + keyWidth, y + noteHeight_), IM_COL32(50, 50, 60, 255));
 
-        // Note labels for C notes (always visible on mobile since notes are bigger)
-        if (isC && noteHeight_ >= 14) {
+        // Note labels for all white keys
+        if (!isBlackKey && noteHeight_ >= 14) {
             std::string label = midi::getNoteName(pitch);
-            drawList->AddText(ImVec2(pos.x + 3, y + 2), IM_COL32(50, 50, 60, 255), label.c_str());
+            ImU32 labelColor = isC ? IM_COL32(40, 40, 50, 255) : IM_COL32(100, 100, 115, 255);
+            drawList->AddText(ImVec2(pos.x + 3, y + 2), labelColor, label.c_str());
         }
     }
 

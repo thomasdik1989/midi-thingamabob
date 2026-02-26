@@ -66,29 +66,46 @@ void SettingsScreen::renderTimeSignature(float cardWidth) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14, 12));
 
-    // Beats per bar
-    ImGui::Text("Beats:");
-    ImGui::SameLine();
+    float innerWidth = cardWidth - CARD_PADDING * 2;
+    float groupWidth = (innerWidth - 20) * 0.5f;
+    float btnW = BUTTON_HEIGHT;
+    float numW = groupWidth - btnW * 2 - 12;
 
-    if (ImGui::Button("-##beats", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+    // Two groups side by side: Beats | Unit
+    ImGui::BeginGroup();
+
+    // "Beats:" label centered above controls
+    float beatsLabelW = ImGui::CalcTextSize("Beats:").x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (groupWidth - beatsLabelW) * 0.5f);
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.65f, 1.0f), "Beats:");
+
+    if (ImGui::Button("-##beats", ImVec2(btnW, BUTTON_HEIGHT))) {
         project.beats_per_bar = std::max(1, project.beats_per_bar - 1);
         project.modified = true;
     }
     ImGui::SameLine();
+    // Centered number between - and +
+    float numTextW = ImGui::CalcTextSize("00").x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (numW - numTextW) * 0.5f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (BUTTON_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f);
     ImGui::Text("%d", project.beats_per_bar);
     ImGui::SameLine();
-    if (ImGui::Button("+##beats", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (BUTTON_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (numW - numTextW) * 0.5f);
+    if (ImGui::Button("+##beats", ImVec2(btnW, BUTTON_HEIGHT))) {
         project.beats_per_bar = std::min(16, project.beats_per_bar + 1);
         project.modified = true;
     }
+    ImGui::EndGroup();
 
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(20, 0));
-    ImGui::SameLine();
+    ImGui::SameLine(0, 20);
 
-    // Beat unit
-    ImGui::Text("Unit:");
-    ImGui::SameLine();
+    ImGui::BeginGroup();
+
+    // "Unit:" label centered above controls
+    float unitLabelW = ImGui::CalcTextSize("Unit:").x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (groupWidth - unitLabelW) * 0.5f);
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.65f, 1.0f), "Unit:");
 
     static const int beatUnits[] = {2, 4, 8, 16};
     int currentIdx = 1;
@@ -96,19 +113,24 @@ void SettingsScreen::renderTimeSignature(float cardWidth) {
         if (beatUnits[i] == project.beat_unit) { currentIdx = i; break; }
     }
 
-    if (ImGui::Button("-##unit", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+    if (ImGui::Button("-##unit", ImVec2(btnW, BUTTON_HEIGHT))) {
         currentIdx = std::max(0, currentIdx - 1);
         project.beat_unit = beatUnits[currentIdx];
         project.modified = true;
     }
     ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (numW - numTextW) * 0.5f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (BUTTON_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f);
     ImGui::Text("%d", project.beat_unit);
     ImGui::SameLine();
-    if (ImGui::Button("+##unit", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (BUTTON_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (numW - numTextW) * 0.5f);
+    if (ImGui::Button("+##unit", ImVec2(btnW, BUTTON_HEIGHT))) {
         currentIdx = std::min(3, currentIdx + 1);
         project.beat_unit = beatUnits[currentIdx];
         project.modified = true;
     }
+    ImGui::EndGroup();
 
     ImGui::PopStyleVar();
 
@@ -128,43 +150,52 @@ void SettingsScreen::renderLoopRegion(float cardWidth) {
         project.loop_enabled = loopEnabled;
     }
 
-    if (project.loop_enabled) {
-        ImGui::Spacing();
+    ImGui::Spacing();
 
-        int ticksPerBar = project.ticksPerBar();
-        if (ticksPerBar <= 0) ticksPerBar = project.ticks_per_quarter * 4;
+    // Always show Start/End controls, dimmed when disabled
+    if (!project.loop_enabled) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.4f);
+        ImGui::BeginDisabled();
+    }
 
-        // Start bar
-        int startBar = static_cast<int>(project.loop_start / ticksPerBar) + 1;
-        ImGui::Text("Start:");
-        ImGui::SameLine();
-        if (ImGui::Button("-##loopstart", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
-            startBar = std::max(1, startBar - 1);
-            project.loop_start = static_cast<uint32_t>((startBar - 1) * ticksPerBar);
-        }
-        ImGui::SameLine();
-        ImGui::Text("Bar %d", startBar);
-        ImGui::SameLine();
-        if (ImGui::Button("+##loopstart", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
-            startBar++;
-            project.loop_start = static_cast<uint32_t>((startBar - 1) * ticksPerBar);
-        }
+    int ticksPerBar = project.ticksPerBar();
+    if (ticksPerBar <= 0) ticksPerBar = project.ticks_per_quarter * 4;
 
-        // End bar
-        int endBar = static_cast<int>(project.loop_end / ticksPerBar) + 1;
-        ImGui::Text("End:  ");
-        ImGui::SameLine();
-        if (ImGui::Button("-##loopend", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
-            endBar = std::max(startBar + 1, endBar - 1);
-            project.loop_end = static_cast<uint32_t>((endBar - 1) * ticksPerBar);
-        }
-        ImGui::SameLine();
-        ImGui::Text("Bar %d", endBar);
-        ImGui::SameLine();
-        if (ImGui::Button("+##loopend", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
-            endBar++;
-            project.loop_end = static_cast<uint32_t>((endBar - 1) * ticksPerBar);
-        }
+    // Start bar
+    int startBar = static_cast<int>(project.loop_start / ticksPerBar) + 1;
+    ImGui::Text("Start:");
+    ImGui::SameLine();
+    if (ImGui::Button("-##loopstart", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        startBar = std::max(1, startBar - 1);
+        project.loop_start = static_cast<uint32_t>((startBar - 1) * ticksPerBar);
+    }
+    ImGui::SameLine();
+    ImGui::Text("Bar %d", startBar);
+    ImGui::SameLine();
+    if (ImGui::Button("+##loopstart", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        startBar++;
+        project.loop_start = static_cast<uint32_t>((startBar - 1) * ticksPerBar);
+    }
+
+    // End bar
+    int endBar = static_cast<int>(project.loop_end / ticksPerBar) + 1;
+    ImGui::Text("End:  ");
+    ImGui::SameLine();
+    if (ImGui::Button("-##loopend", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        endBar = std::max(startBar + 1, endBar - 1);
+        project.loop_end = static_cast<uint32_t>((endBar - 1) * ticksPerBar);
+    }
+    ImGui::SameLine();
+    ImGui::Text("Bar %d", endBar);
+    ImGui::SameLine();
+    if (ImGui::Button("+##loopend", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        endBar++;
+        project.loop_end = static_cast<uint32_t>((endBar - 1) * ticksPerBar);
+    }
+
+    if (!project.loop_enabled) {
+        ImGui::EndDisabled();
+        ImGui::PopStyleVar();
     }
 
     endCard();

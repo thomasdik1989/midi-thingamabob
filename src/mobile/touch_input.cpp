@@ -186,7 +186,10 @@ void TouchInput::processEvent(const SDL_Event& event, float displayWidth, float 
 
         // Desktop preview: handle mouse events as single-finger touch.
         // This allows the desktop build to be tested with a mouse.
+        // Skip synthetic mouse events that SDL generates from touch input;
+        // those are already handled via SDL_FINGER* above.
         case SDL_MOUSEBUTTONDOWN: {
+            if (event.button.which == SDL_TOUCH_MOUSEID) break;
             if (event.button.button == SDL_BUTTON_LEFT && !mouseDown_) {
                 mouseDown_ = true;
                 float mx = static_cast<float>(event.button.x);
@@ -208,6 +211,7 @@ void TouchInput::processEvent(const SDL_Event& event, float displayWidth, float 
         }
 
         case SDL_MOUSEMOTION: {
+            if (event.motion.which == SDL_TOUCH_MOUSEID) break;
             if (mouseDown_) {
                 Finger* finger = findFinger(MOUSE_FINGER_ID);
                 if (finger) {
@@ -239,6 +243,7 @@ void TouchInput::processEvent(const SDL_Event& event, float displayWidth, float 
         }
 
         case SDL_MOUSEBUTTONUP: {
+            if (event.button.which == SDL_TOUCH_MOUSEID) break;
             if (event.button.button == SDL_BUTTON_LEFT && mouseDown_) {
                 mouseDown_ = false;
                 Finger* finger = findFinger(MOUSE_FINGER_ID);

@@ -94,9 +94,10 @@ void TrackPanelMobile::renderTrackList(float width, float height) {
 
     float contentPadding = CARD_MARGIN;
 
-    // Title
-    ImGui::SetCursorPos(ImVec2(contentPadding, contentPadding));
+    // Title (centered)
     ImGui::PushFont(ImGui::GetIO().Fonts->Fonts.Size > 1 ? ImGui::GetIO().Fonts->Fonts[1] : nullptr);
+    float titleW = ImGui::CalcTextSize("TRACKS").x;
+    ImGui::SetCursorPos(ImVec2((width - titleW) * 0.5f, contentPadding));
     ImGui::Text("TRACKS");
     ImGui::PopFont();
 
@@ -155,13 +156,15 @@ void TrackPanelMobile::renderTrackList(float width, float height) {
 
     ImGui::EndChild();
 
-    // Add Track button at the bottom
+    // Add Track button at the bottom (large, prominent)
     ImGui::SetCursorPosX(contentPadding);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.55f, 0.85f, 1.0f));
-    if (ImGui::Button("+ Add Track", ImVec2(cardWidth, 50))) {
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f);
+    if (ImGui::Button("+\nAdd Track", ImVec2(cardWidth, 70))) {
         app_.addTrack();
     }
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
 }
 
@@ -406,11 +409,14 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
         IM_COL32(240, 240, 240, 255), track.name.c_str()
     );
 
-    // Instrument name (smaller, dimmer)
-    std::string instrName(midi::getInstrumentName(track.program));
+    // Instrument name + channel (smaller, dimmer)
+    char instrLabel[128];
+    auto instrName = midi::getInstrumentName(track.program);
+    snprintf(instrLabel, sizeof(instrLabel), "%.*s (Ch.%d)",
+             static_cast<int>(instrName.size()), instrName.data(), track.channel + 1);
     drawList->AddText(
         ImVec2(textStartX, cardPos.y + CARD_PADDING + 22),
-        IM_COL32(150, 150, 160, 255), instrName.c_str()
+        IM_COL32(150, 150, 160, 255), instrLabel
     );
 
     // Mute/Solo buttons (right side)
@@ -448,11 +454,29 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
         ImGui::PopStyleColor();
     }
 
-    // Volume slider (bottom of card)
+    // Chevron ">" indicator on the right edge (hints at drill-down to editor)
+    float chevronX = cardPos.x + cardWidth - CARD_PADDING - 4;
+    float chevronY = cardPos.y + CARD_HEIGHT * 0.5f - ImGui::GetTextLineHeight() * 0.5f;
+    drawList->AddText(ImVec2(chevronX, chevronY), IM_COL32(100, 100, 115, 255), ">");
+
+    // Volume slider (bottom of card) - colored to match track indicator
     float sliderY = cardPos.y + CARD_HEIGHT - CARD_PADDING - 20;
     float sliderWidth = cardWidth - CARD_PADDING * 2 - 28;
     ImGui::SetCursorScreenPos(ImVec2(textStartX, sliderY));
     ImGui::SetNextItemWidth(sliderWidth);
+
+    // Extract track color components for slider styling
+    int cr = (indicatorColor >> 0) & 0xFF;
+    int cg = (indicatorColor >> 8) & 0xFF;
+    int cb = (indicatorColor >> 16) & 0xFF;
+    ImVec4 grabColor(cr / 255.0f, cg / 255.0f, cb / 255.0f, 1.0f);
+    ImVec4 grabHover(std::min(1.0f, cr / 255.0f + 0.15f),
+                     std::min(1.0f, cg / 255.0f + 0.15f),
+                     std::min(1.0f, cb / 255.0f + 0.15f), 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, grabColor);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, grabHover);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(cr / 510.0f, cg / 510.0f, cb / 510.0f, 0.6f));
+
     float vol = track.volume;
     char volLabel[16];
     snprintf(volLabel, sizeof(volLabel), "##vol_%d", index);
@@ -462,13 +486,7 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
         project.modified = true;
     }
 
-    // Note count
-    char noteInfo[32];
-    snprintf(noteInfo, sizeof(noteInfo), "%zu notes", track.notes.size());
-    drawList->AddText(
-        ImVec2(cardPos.x + CARD_PADDING, sliderY + 2),
-        IM_COL32(100, 100, 110, 255), noteInfo
-    );
+    ImGui::PopStyleColor(3);
 
     // Make the whole card clickable for selection and opening the editor
     ImGui::SetCursorScreenPos(cardPos);

@@ -45,6 +45,24 @@ git submodule update --init --recursive
 ./build.sh clean    # Clean build directory
 ```
 
+### Mobile Builds
+
+```bash
+./build.sh mobile run       # Preview mobile UI on desktop
+./build.sh ios run          # Build & run in iOS Simulator
+./build.sh android run      # Build & run in Android emulator
+```
+
+#### iOS Simulator: "iphonesimulator is not an iOS SDK"
+
+This error means your active developer tools are pointing to the standalone
+Command Line Tools instead of Xcode. The Command Line Tools don't ship with
+iOS SDKs. Fix it by switching to the full Xcode installation:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
 ### Manual Build
 
 ```bash

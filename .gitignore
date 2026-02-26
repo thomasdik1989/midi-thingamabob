@@ -38,3 +38,6 @@ compile_commands.json
 # Temporary files
 *.tmp
 *.temp
+
+# Platform specific files
+platform/*

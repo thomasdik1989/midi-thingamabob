@@ -19,8 +19,8 @@ void ToolbarMobile::render(float displayWidth) {
     float rowHeight = buttonSize + padding * 2;
     height_ = rowHeight * 2 + 4.0f; // Two rows + separator
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 4));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 10));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
 
     // === Row 1: File operations + Transport + Time ===
     ImGui::BeginGroup();
@@ -47,8 +47,7 @@ void ToolbarMobile::render(float displayWidth) {
     }
     ImGui::SameLine();
 
-    // Spacer
-    ImGui::Dummy(ImVec2(4, 0));
+    ImGui::Dummy(ImVec2(2, 0));
     ImGui::SameLine();
 
     // Play button
@@ -126,12 +125,9 @@ void ToolbarMobile::render(float displayWidth) {
     }
     ImGui::SameLine();
 
-    // Spacer
-    ImGui::Dummy(ImVec2(10, 0));
     ImGui::SameLine();
 
-    // Grid snap selector
-    // We need to make sure this is represented in the piano roll.
+    // Grid snap selector (compact: just the value with dropdown chevron)
     static const char* gridNames[] = { "Off", "1", "1/2", "1/4", "1/8", "1/16", "1/32" };
     static const midi::GridSnap gridValues[] = {
         midi::GridSnap::None,
@@ -152,19 +148,10 @@ void ToolbarMobile::render(float displayWidth) {
         }
     }
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (buttonSize - ImGui::GetTextLineHeight()) * 0.5f);
-    ImGui::Text("Grid:");
-    ImGui::SameLine();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (buttonSize - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::SetNextItemWidth(100);
+    ImGui::SetNextItemWidth(80);
     if (ImGui::Combo("##grid_mobile", &currentGridIndex, gridNames, 7)) {
         app_.setGridSnap(gridValues[currentGridIndex]);
     }
-    ImGui::SameLine();
-
-    // Spacer
-    ImGui::Dummy(ImVec2(10, 0));
     ImGui::SameLine();
 
     // Scroll / Edit mode toggle button

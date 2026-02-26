@@ -122,7 +122,7 @@ run_mobile_preview() {
 
 # ─── iOS build ───────────────────────────────────────────────────────────────
 
-IOS_SIMULATOR_NAME="iPhone 16 Pro"
+IOS_SIMULATOR_NAME="iPhone 16e"
 
 build_ios_simulator() {
     local build_dir="$BUILD_DIR/ios-simulator"

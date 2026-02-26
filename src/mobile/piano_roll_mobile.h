@@ -50,8 +50,12 @@ private:
     float scrollX_ = 0.0f;             // Horizontal scroll in ticks
     float scrollY_ = 60.0f * 24.0f;    // Vertical scroll (start near middle C)
 
+    // Drawing
+    void drawRuler(ImDrawList* drawList, ImVec2 rulerPos, ImVec2 rulerSize);
+
     // Layout constants
     static constexpr float KEYBOARD_WIDTH = 50.0f;
+    static constexpr float RULER_HEIGHT = 20.0f;
 
     // Touch interaction state
     enum class InteractionMode {
