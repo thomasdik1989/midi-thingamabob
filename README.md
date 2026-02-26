@@ -13,13 +13,33 @@ A simple MIDI editor with a piano roll interface, built with C++ and Dear ImGui.
 
 ## Dependencies
 
+### All platforms
+
 - CMake 3.16+
 - C++17 compiler
+- Git submodules (Dear ImGui, midifile, RtMidi)
+
+### Desktop
+
 - OpenGL 3.3+
 - GLFW (submodule)
-- Dear ImGui (submodule)
-- midifile (submodule)
-- RtMidi (submodule)
+
+### Mobile (iOS, Android, desktop preview)
+
+- SDL2 (submodule)
+
+### iOS
+
+- Xcode (with iOS SDK and Simulator runtimes)
+
+### Android
+
+- Android SDK with:
+  - SDK Platform 34
+  - Build-Tools 34
+  - NDK 29.0.14033849
+  - CMake 3.31.6 (`sdkmanager "cmake;3.31.6"`)
+- An Android Virtual Device (AVD) for emulator testing
 
 ## Building
 

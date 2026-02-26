@@ -259,6 +259,40 @@ run_ios_simulator() {
 
 # ─── Android build ───────────────────────────────────────────────────────────
 
+ANDROID_CMAKE_VERSION="3.31.6"
+
+detect_android_sdk() {
+    if [ -n "$ANDROID_HOME" ]; then
+        echo "$ANDROID_HOME"
+        return 0
+    fi
+    for p in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" "/usr/local/lib/android/sdk"; do
+        if [ -d "$p" ]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
+
+check_android_cmake() {
+    local sdk_home
+    sdk_home=$(detect_android_sdk) || return 1
+
+    local cmake_bin="$sdk_home/cmake/$ANDROID_CMAKE_VERSION/bin/cmake"
+    if [ ! -x "$cmake_bin" ]; then
+        err "CMake $ANDROID_CMAKE_VERSION is not installed in the Android SDK."
+        echo ""
+        info "The Android Gradle build requires CMake $ANDROID_CMAKE_VERSION."
+        info "Install it with:"
+        echo ""
+        echo "    sdkmanager \"cmake;$ANDROID_CMAKE_VERSION\""
+        echo ""
+        info "Or install it via Android Studio: SDK Manager > SDK Tools > CMake."
+        exit 1
+    fi
+}
+
 detect_android_ndk() {
     if [ -n "$ANDROID_NDK_HOME" ]; then
         echo "$ANDROID_NDK_HOME"
@@ -329,6 +363,8 @@ build_android() {
 }
 
 build_android_apk() {
+    check_android_cmake
+
     local gradle_dir="$PROJECT_DIR/platform/android"
 
     if [ ! -f "$gradle_dir/build.gradle" ]; then
