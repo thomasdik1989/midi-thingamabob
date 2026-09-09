@@ -50,6 +50,11 @@ android {
                 'src/main/java',
                 '../../../third_party/SDL/android-project/app/src/main/java'
             ]
+            // Include project-root assets/ in the APK
+            assets.srcDirs = [
+                'src/main/assets',
+                '../../../assets'
+            ]
         }
     }
 }

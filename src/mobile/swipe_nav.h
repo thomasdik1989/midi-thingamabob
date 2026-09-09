@@ -6,11 +6,14 @@
 #include <string>
 #include <vector>
 
+struct NineSliceTheme;
+
 // Manages three-screen horizontal swipe navigation with smooth transitions.
 // Screens: 0 = Left (Tracks), 1 = Center (Piano Roll), 2 = Right (Settings)
 class SwipeNav {
 public:
     SwipeNav();
+    void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
     using ScreenRenderFn = std::function<void(float width, float height)>;
     void setScreen(int index, const std::string& name, ScreenRenderFn renderFn);
     bool processGesture(const TouchGesture& gesture);
@@ -26,6 +29,7 @@ private:
         ScreenRenderFn renderFn;
     };
 
+    const NineSliceTheme* theme_ = nullptr;
     std::vector<Screen> screens_;
 
     // Current position as a float (0.0 = left screen, 1.0 = center, 2.0 = right)

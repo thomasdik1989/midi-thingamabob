@@ -4,6 +4,8 @@
 #include "../midi/midi_player.h"
 #include <imgui.h>
 
+struct NineSliceTheme;
+
 // Advanced settings screen (right swipe screen).
 // Card-based sections: Time Signature, Loop Region, Master Volume,
 // Quantize, MIDI Output, Export.
@@ -12,6 +14,7 @@ public:
     SettingsScreen(App& app, midi::MidiPlayer& player);
 
     void render(float width, float height);
+    void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
 
 private:
     // Section renderers (each renders a card)
@@ -28,6 +31,7 @@ private:
 
     App& app_;
     midi::MidiPlayer& player_;
+    const NineSliceTheme* theme_ = nullptr;
 
     static constexpr float CARD_MARGIN = 8.0f;
     static constexpr float CARD_PADDING = 14.0f;

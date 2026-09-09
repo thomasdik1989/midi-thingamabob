@@ -11,22 +11,86 @@ ToolbarMobile::ToolbarMobile(App& app, midi::MidiPlayer& player)
 {
 }
 
+static void drawCenteredLabel(ImDrawList* dl, const char* label, ImVec2 pos, ImVec2 size) {
+    const char* hashPos = strstr(label, "##");
+    const char* displayEnd = hashPos ? hashPos : label + strlen(label);
+    ImVec2 textSize = ImGui::CalcTextSize(label, displayEnd);
+    dl->AddText(
+        ImVec2(pos.x + (size.x - textSize.x) * 0.5f,
+               pos.y + (size.y - textSize.y) * 0.5f),
+        IM_COL32(240, 240, 245, 255), label, displayEnd);
+}
+
+bool ToolbarMobile::themedButton(const char* label, ImVec2 size, bool highlighted) {
+    return themedButton(label, size, ButtonGroupPos::Solo, highlighted);
+}
+
+bool ToolbarMobile::themedButton(const char* label, ImVec2 size, ButtonGroupPos pos, bool highlighted) {
+    if (theme_ && theme_->hasButton()) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 screenPos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton(label, size);
+        bool pressed = ImGui::IsItemClicked();
+        bool active = ImGui::IsItemActive() || highlighted;
+        bool hovered = ImGui::IsItemHovered();
+
+        const NineSlice& ns = theme_->getButton(pos, active);
+        ImU32 tint = hovered ? IM_COL32(255, 255, 255, 230) : IM_COL32_WHITE;
+        DrawNineSlice(dl, ns, screenPos, size, tint);
+        drawCenteredLabel(dl, label, screenPos, size);
+        return pressed;
+    }
+
+    // Fallback: plain ImGui button
+    if (highlighted) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+    }
+    bool pressed = ImGui::Button(label, size);
+    if (highlighted) {
+        ImGui::PopStyleColor();
+    }
+    return pressed;
+}
+
+void ToolbarMobile::themedGroupLabel(const char* text, ImVec2 size) {
+    if (theme_ && theme_->hasButton()) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 screenPos = ImGui::GetCursorScreenPos();
+
+        const NineSlice& ns = theme_->getButton(ButtonGroupPos::Center, false);
+        DrawNineSlice(dl, ns, screenPos, size);
+        drawCenteredLabel(dl, text, screenPos, size);
+
+        // Advance cursor as if we placed a widget
+        ImGui::Dummy(size);
+    } else {
+        // Fallback: just centered text at button height
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (size.y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::Text("%s", text);
+        ImGui::SameLine();
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (size.y - ImGui::GetTextLineHeight()) * 0.5f);
+    }
+}
+
 void ToolbarMobile::render(float displayWidth) {
     auto& project = app_.getProject();
 
     float buttonSize = 44.0f;
     float padding = 8.0f;
     float rowHeight = buttonSize + padding * 2;
-    height_ = rowHeight * 2 + 4.0f; // Two rows + separator
+    height_ = rowHeight * 2 + 4.0f;
+
+    // Tighter spacing within groups; the nine-slice edges handle visual separation
+    float groupGap = (theme_ && theme_->hasButtonGroup()) ? 0.0f : 4.0f;
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
 
-    // === Row 1: File operations + Transport + Time ===
+    // === Row 1: File operations + Transport group + Time ===
     ImGui::BeginGroup();
 
-    // Open button
-    if (ImGui::Button("Open", ImVec2(buttonSize * 1.2f, buttonSize))) {
+    // Open button (standalone)
+    if (themedButton("Open", ImVec2(buttonSize * 1.2f, buttonSize))) {
         FileOpsMobile::openFile([this](const std::string& path) {
             if (app_.loadFile(path)) {
                 for (const auto& track : app_.getProject().tracks) {
@@ -37,8 +101,8 @@ void ToolbarMobile::render(float displayWidth) {
     }
     ImGui::SameLine();
 
-    // Save button
-    if (ImGui::Button("Save", ImVec2(buttonSize * 1.2f, buttonSize))) {
+    // Save button (standalone)
+    if (themedButton("Save", ImVec2(buttonSize * 1.2f, buttonSize))) {
         if (!project.filepath.empty()) {
             app_.saveFile();
         } else {
@@ -50,34 +114,29 @@ void ToolbarMobile::render(float displayWidth) {
     ImGui::Dummy(ImVec2(2, 0));
     ImGui::SameLine();
 
-    // Play button
+    // Transport group: [Play | Pause | Stop]
     bool isPlaying = app_.isPlaying();
-    if (isPlaying) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
-    }
-    if (ImGui::Button("Play", ImVec2(buttonSize * 1.2f, buttonSize))) {
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(groupGap, 4));
+    if (themedButton("Play", ImVec2(buttonSize * 1.2f, buttonSize), ButtonGroupPos::Left, isPlaying)) {
         if (!isPlaying) {
             app_.setPlaying(true);
         }
     }
-    if (isPlaying) {
-        ImGui::PopStyleColor();
-    }
     ImGui::SameLine();
 
-    // Pause button
-    if (ImGui::Button("||", ImVec2(buttonSize, buttonSize))) {
+    if (themedButton("||##pause", ImVec2(buttonSize, buttonSize), ButtonGroupPos::Center)) {
         if (isPlaying) {
             app_.setPlaying(false);
         }
     }
     ImGui::SameLine();
 
-    // Stop button
-    if (ImGui::Button("Stop", ImVec2(buttonSize * 1.2f, buttonSize))) {
+    if (themedButton("Stop", ImVec2(buttonSize * 1.2f, buttonSize), ButtonGroupPos::Right)) {
         app_.stop();
         player_.panic();
     }
+    ImGui::PopStyleVar(); // restore ItemSpacing
     ImGui::SameLine();
 
     // Time display
@@ -102,32 +161,35 @@ void ToolbarMobile::render(float displayWidth) {
     );
     ImGui::Spacing();
 
-    // === Row 2: BPM + Grid ===
+    // === Row 2: BPM group + Grid + Mode ===
     ImGui::BeginGroup();
 
-    // BPM minus
-    if (ImGui::Button("-##bpm", ImVec2(buttonSize, buttonSize))) {
+    // BPM group: [- | BPM: 120 | +]
+    char bpmText[32];
+    snprintf(bpmText, sizeof(bpmText), "BPM: %.0f", project.tempo_bpm);
+    float bpmLabelWidth = std::max(80.0f, ImGui::CalcTextSize(bpmText).x + 16.0f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(groupGap, 4));
+    if (themedButton("-##bpm", ImVec2(buttonSize, buttonSize), ButtonGroupPos::Left)) {
         project.tempo_bpm = std::max(20.0f, project.tempo_bpm - 1.0f);
         project.modified = true;
     }
     ImGui::SameLine();
 
-    // BPM display
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (buttonSize - ImGui::GetTextLineHeight()) * 0.5f);
-    ImGui::Text("BPM: %.0f", project.tempo_bpm);
+    themedGroupLabel(bpmText, ImVec2(bpmLabelWidth, buttonSize));
     ImGui::SameLine();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (buttonSize - ImGui::GetTextLineHeight()) * 0.5f);
 
-    // BPM plus
-    if (ImGui::Button("+##bpm", ImVec2(buttonSize, buttonSize))) {
+    if (themedButton("+##bpm", ImVec2(buttonSize, buttonSize), ButtonGroupPos::Right)) {
         project.tempo_bpm = std::min(300.0f, project.tempo_bpm + 1.0f);
         project.modified = true;
     }
+    ImGui::PopStyleVar(); // restore ItemSpacing
     ImGui::SameLine();
 
+    ImGui::Dummy(ImVec2(2, 0));
     ImGui::SameLine();
 
-    // Grid snap selector (compact: just the value with dropdown chevron)
+    // Grid snap selector
     static const char* gridNames[] = { "Off", "1", "1/2", "1/4", "1/8", "1/16", "1/32" };
     static const midi::GridSnap gridValues[] = {
         midi::GridSnap::None,
@@ -148,23 +210,23 @@ void ToolbarMobile::render(float displayWidth) {
         }
     }
 
-    ImGui::SetNextItemWidth(80);
-    if (ImGui::Combo("##grid_mobile", &currentGridIndex, gridNames, 7)) {
+    if (ThemedCombo("##grid_mobile", &currentGridIndex, gridNames, 7,
+                    theme_, 80, buttonSize)) {
         app_.setGridSnap(gridValues[currentGridIndex]);
     }
     ImGui::SameLine();
 
-    // Scroll / Edit mode toggle button
+    // Scroll / Edit mode toggle (standalone)
     bool wasScrollMode = scrollMode_;
-    if (wasScrollMode) {
+    if (!theme_ && wasScrollMode) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.35f, 1.0f));
     }
     const char* modeLabel = wasScrollMode ? "Scroll" : "Edit";
-    if (ImGui::Button(modeLabel, ImVec2(buttonSize * 1.5f, buttonSize))) {
+    if (themedButton(modeLabel, ImVec2(buttonSize * 1.5f, buttonSize), wasScrollMode)) {
         scrollMode_ = !scrollMode_;
     }
-    if (wasScrollMode) {
+    if (!theme_ && wasScrollMode) {
         ImGui::PopStyleColor(2);
     }
 

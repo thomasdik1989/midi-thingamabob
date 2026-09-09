@@ -8,6 +8,7 @@
 #include "piano_roll_mobile.h"
 #include "track_panel_mobile.h"
 #include "settings_screen.h"
+#include "nine_slice.h"
 
 #include <SDL.h>
 #include <chrono>
@@ -22,6 +23,8 @@ public:
     void render(float displayWidth, float displayHeight);
 
 private:
+    void loadTheme();
+
     App app_;
     midi::MidiPlayer midiPlayer_;
     TouchInput touchInput_;
@@ -30,6 +33,8 @@ private:
     PianoRollMobile pianoRoll_;
     TrackPanelMobile trackPanel_;
     SettingsScreen settings_;
+    NineSliceTheme theme_;
+    bool themeLoaded_ = false;
     std::chrono::steady_clock::time_point lastFrame_;
 
     // Display size cache

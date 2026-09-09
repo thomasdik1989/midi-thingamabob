@@ -1,4 +1,5 @@
 #include "piano_roll_mobile.h"
+#include "nine_slice.h"
 #include "../midi/types.h"
 #include <algorithm>
 #include <cmath>
@@ -27,8 +28,12 @@ void PianoRollMobile::render(float width, float height) {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
     // Background
-    drawList->AddRectFilled(windowPos, ImVec2(windowPos.x + width, windowPos.y + height),
-                           IM_COL32(30, 30, 35, 255));
+    if (theme_ && theme_->hasPanel()) {
+        DrawNineSlice(drawList, theme_->panel, windowPos, ImVec2(width, height));
+    } else {
+        drawList->AddRectFilled(windowPos, ImVec2(windowPos.x + width, windowPos.y + height),
+                               IM_COL32(30, 30, 35, 255));
+    }
 
     // Draw components
     drawRuler(drawList, rulerPos, rulerSize);

@@ -5,6 +5,8 @@
 #include "touch_input.h"
 #include <imgui.h>
 
+struct NineSliceTheme;
+
 class PianoRollMobile {
 public:
     PianoRollMobile(App& app, midi::MidiPlayer& player);
@@ -12,6 +14,7 @@ public:
     void processGesture(const TouchGesture& gesture);
     void setScrollMode(bool enabled) { scrollMode_ = enabled; }
     bool isScrollMode() const { return scrollMode_; }
+    void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
 
 private:
     // Drawing
@@ -43,6 +46,7 @@ private:
 
     App& app_;
     midi::MidiPlayer& player_;
+    const NineSliceTheme* theme_ = nullptr;
 
     // View state (larger defaults for mobile)
     float pixelsPerTick_ = 0.2f;       // Horizontal zoom (2x desktop)

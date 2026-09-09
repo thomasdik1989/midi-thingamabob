@@ -6,6 +6,8 @@
 #include <imgui.h>
 #include <string>
 
+struct NineSliceTheme;
+
 // Touch-optimized track panel with large cards, swipe-to-delete, Mute/Solo buttons.
 // Tapping a card opens a detail editor with instrument, channel, name, and pan controls.
 class TrackPanelMobile {
@@ -13,6 +15,7 @@ public:
     TrackPanelMobile(App& app, midi::MidiPlayer& player);
     void render(float width, float height);
     void processGesture(const TouchGesture& gesture);
+    void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
 
 private:
     void renderTrackList(float width, float height);
@@ -21,6 +24,7 @@ private:
 
     App& app_;
     midi::MidiPlayer& player_;
+    const NineSliceTheme* theme_ = nullptr;
 
     // Track editing state (-1 = showing list, >= 0 = editing that track index)
     int editingTrackIndex_ = -1;

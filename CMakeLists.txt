@@ -93,6 +93,7 @@ if(BUILD_MOBILE)
         src/mobile/track_panel_mobile.cpp
         src/mobile/settings_screen.cpp
         src/mobile/file_ops_mobile.cpp
+        src/mobile/nine_slice.cpp
     )
 
     set(MOBILE_TARGET MidiEditorMobile)
@@ -111,10 +112,17 @@ if(BUILD_MOBILE)
             platform/ios/AppDelegate.m
         )
 
+        # Bundle asset files into the .app so they're available at runtime
+        file(GLOB ASSET_FILES ${CMAKE_CURRENT_LIST_DIR}/assets/*.png)
+        set_source_files_properties(${ASSET_FILES} PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources/assets"
+        )
+
         add_executable(${MOBILE_TARGET} MACOSX_BUNDLE
             ${CORE_SOURCES}
             ${MOBILE_SOURCES}
             ${IOS_SOURCES}
+            ${ASSET_FILES}
         )
 
         set_target_properties(${MOBILE_TARGET} PROPERTIES
@@ -217,6 +225,7 @@ if(BUILD_MOBILE)
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${CMAKE_CURRENT_LIST_DIR}/third_party/midifile/include
         ${CMAKE_CURRENT_LIST_DIR}/third_party/rtmidi
+        ${CMAKE_CURRENT_LIST_DIR}/third_party/stb
     )
 
     target_compile_definitions(${MOBILE_TARGET} PRIVATE BUILD_MOBILE=1)
@@ -295,5 +304,7 @@ else()
 
 endif()
 
-# Copy assets if any
-# file(COPY ${CMAKE_SOURCE_DIR}/assets DESTINATION ${CMAKE_BINARY_DIR})
+# Copy assets to the build output so they're available at runtime
+if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/assets)
+    file(COPY ${CMAKE_CURRENT_LIST_DIR}/assets DESTINATION ${CMAKE_BINARY_DIR})
+endif()

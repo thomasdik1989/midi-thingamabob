@@ -1,12 +1,14 @@
 #include "mobile_app.h"
 #include "file_ops_mobile.h"
 #include <imgui.h>
+#include <SDL.h>
 
 MobileApp::MobileApp()
     : toolbar_(app_, midiPlayer_)
     , pianoRoll_(app_, midiPlayer_)
     , trackPanel_(app_, midiPlayer_)
     , settings_(app_, midiPlayer_)
+    , theme_{}
     , lastFrame_(std::chrono::steady_clock::now())
 {
     // Setup swipe navigation screens
@@ -22,7 +24,58 @@ MobileApp::MobileApp()
     });
 }
 
-MobileApp::~MobileApp() = default;
+MobileApp::~MobileApp() {
+    FreeNineSliceTheme(theme_);
+}
+
+void MobileApp::loadTheme() {
+    if (themeLoaded_) return;
+    themeLoaded_ = true;
+
+    auto tryLoad = [&](const std::string& dir) -> bool {
+        fprintf(stderr, "nine_slice: trying path: %s\n", dir.c_str());
+        NineSliceTheme t = LoadNineSliceTheme(dir.c_str());
+        if (t.loaded()) {
+            theme_ = t;
+            return true;
+        }
+        FreeNineSliceTheme(t);
+        return false;
+    };
+
+    // Build a list of candidate paths (platform-dependent)
+    std::vector<std::string> candidates;
+
+#if defined(__ANDROID__)
+    // On Android, SDL_RWFromFile uses AAssetManager. Files from Gradle's
+    // assets.srcDirs end up at the APK's asset root, so use an empty prefix.
+    candidates.push_back("");
+#endif
+
+    const char* base = SDL_GetBasePath();
+    if (base) {
+        candidates.push_back(std::string(base) + "assets");
+        candidates.push_back(std::string(base) + "Resources/assets");
+        candidates.push_back(std::string(base) + "assets");
+    }
+    candidates.push_back("assets");
+    candidates.push_back("../assets");
+
+    for (const auto& path : candidates) {
+        if (tryLoad(path)) break;
+    }
+
+    if (!theme_.loaded()) {
+        fprintf(stderr, "nine_slice: no theme found, using default rendering\n");
+        return;
+    }
+
+    toolbar_.setTheme(&theme_);
+    pianoRoll_.setTheme(&theme_);
+    trackPanel_.setTheme(&theme_);
+    settings_.setTheme(&theme_);
+    swipeNav_.setTheme(&theme_);
+}
 
 void MobileApp::processEvent(const SDL_Event& event) {
     touchInput_.processEvent(event, displayWidth_, displayHeight_);
@@ -85,6 +138,11 @@ void MobileApp::update(float deltaTime) {
 void MobileApp::render(float displayWidth, float displayHeight) {
     displayWidth_ = displayWidth;
     displayHeight_ = displayHeight;
+
+    // Deferred theme load: GL context must be current
+    if (!themeLoaded_) {
+        loadTheme();
+    }
 
     swipeNav_.render(displayWidth, displayHeight);
 

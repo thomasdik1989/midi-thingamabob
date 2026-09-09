@@ -1,4 +1,5 @@
 #include "track_panel_mobile.h"
+#include "nine_slice.h"
 #include "../midi/general_midi.h"
 #include <algorithm>
 #include <cmath>
@@ -254,25 +255,25 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     // Category combo
     int category = midi::getCategoryForProgram(track.program);
     ImGui::Text("Category:");
-    ImGui::SetNextItemWidth(itemWidth);
-    if (ImGui::BeginCombo("##category", std::string(midi::getCategoryName(category)).c_str())) {
+    if (ThemedBeginCombo("##category", std::string(midi::getCategoryName(category)).c_str(),
+                         theme_, itemWidth)) {
         for (int c = 0; c < 16; ++c) {
             bool selected = (c == category);
             if (ImGui::Selectable(std::string(midi::getCategoryName(c)).c_str(), selected)) {
-                track.program = c * 8;  // First instrument in category
+                track.program = c * 8;
                 project.modified = true;
                 player_.sendProgramChange(track.channel, track.program);
             }
         }
-        ImGui::EndCombo();
+        ThemedEndCombo(theme_);
     }
 
     ImGui::Spacing();
 
     // Instrument within category
     ImGui::Text("Sound:");
-    ImGui::SetNextItemWidth(itemWidth);
-    if (ImGui::BeginCombo("##instrument", std::string(midi::getInstrumentName(track.program)).c_str())) {
+    if (ThemedBeginCombo("##instrument", std::string(midi::getInstrumentName(track.program)).c_str(),
+                         theme_, itemWidth)) {
         int baseProgram = (track.program / 8) * 8;
         for (int i = 0; i < 8; ++i) {
             int prog = baseProgram + i;
@@ -283,7 +284,7 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
                 player_.sendProgramChange(track.channel, track.program);
             }
         }
-        ImGui::EndCombo();
+        ThemedEndCombo(theme_);
     }
 
     ImGui::EndChild();
@@ -377,8 +378,12 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
     ImVec2 cardEnd(cardPos.x + cardWidth, cardPos.y + CARD_HEIGHT);
 
     // Card background
-    ImU32 bgColor = IM_COL32(42, 42, 42, 255);
-    drawList->AddRectFilled(cardPos, cardEnd, bgColor, 8.0f);
+    if (theme_ && theme_->hasCard()) {
+        DrawNineSlice(drawList, theme_->card, cardPos,
+                      ImVec2(cardWidth, CARD_HEIGHT));
+    } else {
+        drawList->AddRectFilled(cardPos, cardEnd, IM_COL32(42, 42, 42, 255), 8.0f);
+    }
 
     // Selection border
     if (isSelected) {

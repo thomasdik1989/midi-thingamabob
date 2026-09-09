@@ -1,4 +1,5 @@
 #include "settings_screen.h"
+#include "nine_slice.h"
 #include "file_ops_mobile.h"
 #include "../midi/types.h"
 #include <algorithm>
@@ -11,12 +12,26 @@ SettingsScreen::SettingsScreen(App& app, midi::MidiPlayer& player)
 }
 
 void SettingsScreen::beginCard(const char* title, float cardWidth) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
+    bool useNineSlice = theme_ && theme_->hasCard();
+
+    if (useNineSlice) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
+    }
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(CARD_PADDING, CARD_PADDING));
 
     ImGui::BeginChild(title, ImVec2(cardWidth, 0),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+
+    // Draw nine-slice as the first thing in the child so it's behind all content.
+    // Uses the previous frame's auto-sized dimensions (settles after one frame).
+    if (useNineSlice) {
+        ImVec2 pos = ImGui::GetWindowPos();
+        ImVec2 sz = ImGui::GetWindowSize();
+        DrawNineSlice(ImGui::GetWindowDrawList(), theme_->card, pos, sz);
+    }
 
     // Section title
     ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.95f, 1.0f), "%s", title);
@@ -276,9 +291,9 @@ void SettingsScreen::renderMidiOutput(float cardWidth) {
     }
 
     int deviceIndex = player_.getCurrentDevice() + 1;
-    ImGui::SetNextItemWidth(cardWidth - CARD_PADDING * 2);
-    if (ImGui::Combo("##midi_device", &deviceIndex, deviceNames.data(),
-                     static_cast<int>(deviceNames.size()))) {
+    if (ThemedCombo("##midi_device", &deviceIndex, deviceNames.data(),
+                     static_cast<int>(deviceNames.size()), theme_,
+                     cardWidth - CARD_PADDING * 2)) {
         if (deviceIndex == 0) {
             player_.closeDevice();
         } else {

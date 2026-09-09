@@ -1,4 +1,5 @@
 #include "swipe_nav.h"
+#include "nine_slice.h"
 #include <cmath>
 #include <algorithm>
 
@@ -119,11 +120,22 @@ void SwipeNav::render(float displayWidth, float displayHeight) {
         char windowId[64];
         snprintf(windowId, sizeof(windowId), "##screen_%d", i);
 
+        bool useNineSlice = theme_ && theme_->hasPanel();
+
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.12f, 1.0f));
+        if (useNineSlice) {
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.12f, 1.0f));
+        }
 
         if (ImGui::Begin(windowId, nullptr, flags)) {
+            if (useNineSlice) {
+                ImVec2 wpos = ImGui::GetWindowPos();
+                ImVec2 wsz = ImGui::GetWindowSize();
+                DrawNineSlice(ImGui::GetWindowDrawList(), theme_->panel, wpos, wsz);
+            }
             screens_[i].renderFn(displayWidth, contentHeight);
         }
         ImGui::End();
