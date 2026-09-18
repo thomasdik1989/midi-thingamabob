@@ -1,7 +1,10 @@
 #include "toolbar.h"
+#include "../midi/harmony.h"
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 Toolbar::Toolbar(App& app, midi::MidiPlayer& player)
     : app_(app)
@@ -57,18 +60,24 @@ void Toolbar::render() {
     ImGui::SetNextItemWidth(60);
     float tempo = project.tempo_bpm;
     if (ImGui::DragFloat("##tempo", &tempo, 1.0f, 20.0f, 300.0f, "%.0f")) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         project.tempo_bpm = std::max(1.0f, tempo);
         project.modified = true;
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
     ImGui::SameLine();
 
     // Time signature
     ImGui::SetNextItemWidth(30);
     int tsNum = project.beats_per_bar;
     if (ImGui::DragInt("##tsnum", &tsNum, 0.1f, 1, 16)) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         project.beats_per_bar = std::max(1, tsNum);
         project.modified = true;
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
     ImGui::SameLine();
     ImGui::Text("/");
     ImGui::SameLine();
@@ -80,6 +89,7 @@ void Toolbar::render() {
         if (beatUnits[i] == project.beat_unit) { currentBeatUnit = i; break; }
     }
     if (ImGui::Combo("##tsdenom", &currentBeatUnit, beatUnitLabels, 4)) {
+        auto transaction = app_.edit();
         project.beat_unit = beatUnits[currentBeatUnit];
         project.modified = true;
     }
@@ -91,6 +101,7 @@ void Toolbar::render() {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 1.0f));
     }
     if (ImGui::Button("Loop")) {
+        auto transaction = app_.edit();
         project.loop_enabled = !project.loop_enabled;
     }
     if (loopEnabled) {
@@ -134,6 +145,52 @@ void Toolbar::render() {
     if (ImGui::Combo("##grid", &currentGridIndex, gridNames, 7)) {
         app_.setGridSnap(gridValues[currentGridIndex]);
     }
+    ImGui::SameLine();
+
+    ImGui::Text("Stamp:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90);
+    int stamp_index = static_cast<int>(app_.getHarmonyKind());
+    if (stamp_index < 0 || stamp_index >= midi::harmonyKindCount()) stamp_index = 0;
+    if (ImGui::BeginCombo("##stamp", midi::harmonyKindName(app_.getHarmonyKind()))) {
+        for (int i = 0; i < midi::harmonyKindCount(); ++i) {
+            auto kind = static_cast<midi::HarmonyKind>(i);
+            if (ImGui::Selectable(midi::harmonyKindName(kind), stamp_index == i)) {
+                app_.setHarmonyKind(kind);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+
+    static const char* key_names[] = {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+    ImGui::Text("Key:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(55);
+    int tonic = app_.getHarmonyTonic();
+    if (ImGui::Combo("##key", &tonic, key_names, 12)) {
+        app_.setHarmonyTonic(tonic);
+    }
+    ImGui::SameLine();
+    bool minor = app_.getHarmonyMinor();
+    if (ImGui::Checkbox("Min", &minor)) {
+        app_.setHarmonyMinor(minor);
+    }
+    ImGui::SameLine();
+
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+
+    char length_label[48];
+    snprintf(length_label, sizeof(length_label), "Length: %d bars", app_.getLengthBars());
+    if (ImGui::Button(length_label)) {
+        songLengthDraft_ = app_.getLengthBars();
+        showSongLengthPopup_ = true;
+        ImGui::OpenPopup("Song Length");
+    }
+    renderSongLengthPopup();
     ImGui::SameLine();
 
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -182,4 +239,41 @@ void Toolbar::render() {
     ImGui::PopStyleVar();
 
     ImGui::End();
+}
+
+void Toolbar::renderSongLengthPopup() {
+    if (!showSongLengthPopup_) return;
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Song Length", &showSongLengthPopup_,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Set the editable grid length in bars.");
+        ImGui::Spacing();
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputInt("Bars", &songLengthDraft_);
+        songLengthDraft_ = std::clamp(songLengthDraft_, 1, 999);
+
+        ImGui::Spacing();
+        if (ImGui::Button("16 bars")) songLengthDraft_ = 16;
+        ImGui::SameLine();
+        if (ImGui::Button("32 bars")) songLengthDraft_ = 32;
+        ImGui::SameLine();
+        if (ImGui::Button("64 bars")) songLengthDraft_ = 64;
+        ImGui::SameLine();
+        if (ImGui::Button("128 bars")) songLengthDraft_ = 128;
+
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(80, 0))) {
+            app_.setLengthBars(songLengthDraft_);
+            showSongLengthPopup_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+            showSongLengthPopup_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }

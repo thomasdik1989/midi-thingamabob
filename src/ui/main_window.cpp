@@ -1,10 +1,12 @@
 #include "main_window.h"
+#include "../midi/patterns.h"
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <cstring>
 
 MainWindow::MainWindow(App& app)
     : app_(app)
+    , fileSafety_(app)
     , toolbar_(app, midiPlayer_)
     , trackPanel_(app, midiPlayer_)
     , pianoRoll_(app, midiPlayer_)
@@ -24,7 +26,7 @@ void MainWindow::render() {
     if (app_.isPlaying()) {
         app_.advancePlayhead(deltaTime);
     }
-    midiPlayer_.update(app_.getProject(), app_.getPlayheadTick(), app_.isPlaying());
+    midiPlayer_.update(app_.getProject(), app_.getPlayheadTick(), app_.isPlaying(), app_.playbackSpans());
 
     // Handle keyboard shortcuts
     handleKeyboardShortcuts();
@@ -43,6 +45,7 @@ void MainWindow::render() {
     // Handle file dialogs
     handleFileDialogs();
 
+    renderFileSafety(fileSafety_);
     firstFrame_ = false;
 }
 
@@ -50,21 +53,22 @@ void MainWindow::renderMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New", "Ctrl+N")) {
-                app_.newProject();
+                fileSafety_.request([this] { midiPlayer_.panic(); app_.newProject(); });
             }
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
                 showOpenDialog();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Save", "Ctrl+S", false, !app_.getProject().filepath.empty())) {
-                app_.saveFile();
+            if (ImGui::MenuItem("Save", "Ctrl+S")) {
+                if (app_.getProject().filepath.empty()) showSaveDialog();
+                else if (!app_.saveFile()) fileSafety_.showError("Save failed. Your changes are still open.");
             }
             if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S")) {
                 showSaveDialog();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
-                // Will be handled by GLFW
+                requestClose();
             }
             ImGui::EndMenu();
         }
@@ -93,12 +97,38 @@ void MainWindow::renderMenuBar() {
             if (ImGui::MenuItem("Quantize", "Q")) {
                 app_.quantizeSelectedNotes();
             }
+            if (ImGui::MenuItem("Harmonize", "H")) {
+                app_.harmonizeSelectedNotes();
+            }
+            if (ImGui::BeginMenu("Insert Beat")) {
+                static const int bar_counts[] = {1, 2, 4, 8, 16, 32, 64};
+                for (int g = 0; g < midi::drumGrooveCount(); ++g) {
+                    const auto& groove = midi::getDrumGroove(g);
+                    if (ImGui::BeginMenu(groove.name)) {
+                        for (int bars : bar_counts) {
+                            char label[64];
+                            snprintf(label, sizeof(label), "%d bar%s", bars, bars == 1 ? "" : "s");
+                            if (ImGui::MenuItem(label)) {
+                                app_.insertDrumGroove(g, bars);
+                            }
+                        }
+                        if (ImGui::MenuItem("To song end")) {
+                            app_.insertDrumGroove(g, 0);
+                        }
+                        ImGui::EndMenu();
+                    }
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("Track")) {
             if (ImGui::MenuItem("Add Track")) {
                 app_.addTrack();
+            }
+            if (ImGui::MenuItem("Add Drum Track")) {
+                app_.addDrumTrack();
             }
             if (ImGui::MenuItem("Remove Track", nullptr, false,
                                 app_.getProject().tracks.size() > 1)) {
@@ -179,14 +209,14 @@ void MainWindow::handleKeyboardShortcuts() {
     ImGuiIO& io = ImGui::GetIO();
 
     // Don't handle shortcuts if typing in an input field
-    if (io.WantTextInput) return;
+    if (io.WantTextInput || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
 
     bool ctrl = io.KeyCtrl;
     bool shift = io.KeyShift;
 
     // File operations
     if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_N)) {
-        app_.newProject();
+        fileSafety_.request([this] { midiPlayer_.panic(); app_.newProject(); });
     }
     if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_O)) {
         showOpenDialog();
@@ -195,7 +225,7 @@ void MainWindow::handleKeyboardShortcuts() {
         if (app_.getProject().filepath.empty()) {
             showSaveDialog();
         } else {
-            app_.saveFile();
+            if (!app_.saveFile()) fileSafety_.showError("Save failed. Your changes are still open.");
         }
     }
     if (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_S)) {
@@ -224,6 +254,9 @@ void MainWindow::handleKeyboardShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_Q)) {
         app_.quantizeSelectedNotes();
     }
+    if (ImGui::IsKeyPressed(ImGuiKey_H)) {
+        app_.harmonizeSelectedNotes();
+    }
 
     // Transport
     if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
@@ -235,8 +268,11 @@ void MainWindow::handleKeyboardShortcuts() {
 }
 
 void MainWindow::showOpenDialog() {
-    showOpenFileDialog_ = true;
-    std::memset(filePathBuffer_, 0, sizeof(filePathBuffer_));
+    fileSafety_.request([this] {
+        showOpenFileDialog_ = true;
+        openErrorMessage_.clear();
+        std::memset(filePathBuffer_, 0, sizeof(filePathBuffer_));
+    });
 }
 
 void MainWindow::showSaveDialog() {
@@ -262,9 +298,12 @@ void MainWindow::handleFileDialogs() {
                     midiPlayer_.sendProgramChange(track.channel, track.program);
                 }
                 ImGui::CloseCurrentPopup();
+            } else {
+                openErrorMessage_ = "Could not open this file. Check the path and use a type 0/1 MIDI file with PPQ timing.";
             }
         }
 
+        if (!openErrorMessage_.empty()) ImGui::TextWrapped("%s", openErrorMessage_.c_str());
         ImGui::Separator();
         if (ImGui::Button("Open", ImVec2(120, 0))) {
             if (app_.loadFile(filePathBuffer_)) {
@@ -272,6 +311,8 @@ void MainWindow::handleFileDialogs() {
                     midiPlayer_.sendProgramChange(track.channel, track.program);
                 }
                 ImGui::CloseCurrentPopup();
+            } else {
+                openErrorMessage_ = "Could not open this file. Check the path and use a type 0/1 MIDI file with PPQ timing.";
             }
         }
         ImGui::SameLine();
@@ -337,4 +378,12 @@ void MainWindow::handleFileDialogs() {
 
         ImGui::EndPopup();
     }
+}
+
+void MainWindow::requestClose() {
+    fileSafety_.request([this] {
+        midiPlayer_.panic();
+        app_.discardRecovery();
+        closeApproved_ = true;
+    });
 }

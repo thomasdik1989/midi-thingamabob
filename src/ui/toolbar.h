@@ -10,7 +10,11 @@ public:
     void render();
 
 private:
+    void renderSongLengthPopup();
+
     App& app_;
     midi::MidiPlayer& player_;
     int selectedMidiDevice_ = -1;
+    bool showSongLengthPopup_ = false;
+    int songLengthDraft_ = 32;
 };

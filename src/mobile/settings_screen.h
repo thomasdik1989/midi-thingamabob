@@ -22,6 +22,9 @@ private:
     void renderLoopRegion(float cardWidth);
     void renderMasterVolume(float cardWidth);
     void renderQuantize(float cardWidth);
+    void renderHarmony(float cardWidth);
+    void renderSongLength(float cardWidth);
+    void renderPatterns(float cardWidth);
     void renderMidiOutput(float cardWidth);
     void renderExport(float cardWidth);
 

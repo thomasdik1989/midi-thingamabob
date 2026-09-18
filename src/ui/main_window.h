@@ -2,6 +2,8 @@
 
 #include "../app.h"
 #include "toolbar.h"
+#include "../file_safety.h"
+#include "ui/file_safety.h"
 #include "track_panel.h"
 #include "piano_roll.h"
 #include "../midi/midi_player.h"
@@ -14,6 +16,8 @@ public:
     ~MainWindow();
 
     void render();
+    void requestClose();
+    bool shouldClose() const { return closeApproved_; }
 
 private:
     void renderMenuBar();
@@ -26,6 +30,8 @@ private:
     void showSaveDialog();
 
     App& app_;
+    FileSafety fileSafety_;
+    bool closeApproved_ = false;
     Toolbar toolbar_;
     TrackPanel trackPanel_;
     PianoRoll pianoRoll_;
@@ -40,6 +46,7 @@ private:
     std::string fileDialogPath_;
     char filePathBuffer_[512] = {0};
     std::string saveErrorMessage_;
+    std::string openErrorMessage_;
 
     // UI state
     bool firstFrame_ = true;

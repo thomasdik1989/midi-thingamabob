@@ -1,4 +1,5 @@
 #pragma once
+#include "../file_safety.h"
 
 #include "../app.h"
 #include "../midi/midi_player.h"
@@ -11,12 +12,14 @@
 class ToolbarMobile {
 public:
     ToolbarMobile(App& app, midi::MidiPlayer& player);
+    void setFileSafety(FileSafety* safety) { fileSafety_ = safety; }
     void render(float displayWidth);
     float getHeight() const { return height_; }
     bool isScrollMode() const { return scrollMode_; }
     void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
 
 private:
+    FileSafety* fileSafety_ = nullptr;
     // Standalone themed button (all corners rounded)
     bool themedButton(const char* label, ImVec2 size, bool highlighted = false);
 

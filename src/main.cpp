@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -65,6 +66,12 @@ int main(int argc, char** argv) {
     // Initialize application
     App app;
     MainWindow mainWindow(app);
+#ifdef _WIN32
+    const char* stateRoot = std::getenv("LOCALAPPDATA");
+#else
+    const char* stateRoot = std::getenv("HOME");
+#endif
+    if (stateRoot) app.configureRecovery((std::filesystem::path(stateRoot) / ".midi-editor" / "recovery").string());
 
     // Load file from command line if provided
     if (argc > 1) {
@@ -72,8 +79,12 @@ int main(int argc, char** argv) {
     }
 
     // Main loop
-    while (!glfwWindowShouldClose(window)) {
+    while (!mainWindow.shouldClose()) {
         glfwPollEvents();
+        if (glfwWindowShouldClose(window)) {
+            glfwSetWindowShouldClose(window, GLFW_FALSE);
+            mainWindow.requestClose();
+        }
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();

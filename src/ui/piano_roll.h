@@ -45,6 +45,9 @@ private:
     
     // Utility
     ImU32 velocityToColor(int velocity) const;
+    bool useDrumMap() const;
+    float rowHeight() const;
+    void focusDrumMap(ImVec2 canvasPos, ImVec2 canvasSize);
     
     App& app_;
     midi::MidiPlayer& player_;
@@ -52,8 +55,10 @@ private:
     // View state
     float pixelsPerTick_ = 0.1f;    // Horizontal zoom
     float noteHeight_ = 12.0f;      // Vertical zoom (pixels per semitone)
+    float drumRowHeight_ = 18.0f;   // Drum map row height
     float scrollX_ = 0.0f;          // Horizontal scroll in ticks
     float scrollY_ = 60.0f * noteHeight_; // Vertical scroll (start around middle C)
+    int lastSelectedTrack_ = -1;
     
     // Keyboard width
     static constexpr float KEYBOARD_WIDTH = 80.0f;

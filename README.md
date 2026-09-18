@@ -7,6 +7,10 @@ A simple MIDI editor with a piano roll interface, built with C++ and Dear ImGui.
 - Create and open MIDI files
 - Piano roll editor for composing music
 - Multi-track support with instrument switching (General MIDI)
+- Dedicated drum tracks (MIDI channel 10) with a GM percussion map
+- Insert Beat: table-driven grooves (battle, overworld, waltz, fanfare, fill)
+- Harmony stamp while drawing, and Harmonize on a selection
+- Configurable song length in bars
 - Real-time MIDI playback
 - Note editing (create, move, resize, delete)
 - Track mute/solo
@@ -117,6 +121,37 @@ cmake --build .
 - **Space**: Play/Pause
 - **Enter**: Stop (return to start)
 
+### Tracks
+- **Track → Add Track**: new melody track
+- **Track → Add Drum Track**: channel-10 drums; the piano roll switches to a percussion map
+- **+ Add Drums** in the track panel does the same
+
+### Insert Beat
+- **Edit → Insert Beat**: pick a groove (Battle 8ths, Battle Drive, Overworld Pulse, Waltz, Fanfare March, Phrase Fill) and a length (1–64 bars, or To song end)
+- Creates a drum track if none exists, then tiles the groove from the playhead
+- Mobile: Settings → Insert Beat
+
+### Harmony
+Toolbar **Stamp** (default **Single**) plus **Key** / **Min** control companion notes:
+
+| Stamp | Extra notes |
+|---|---|
+| Single | none |
+| Octave | one octave below |
+| 5th Below | perfect fifth below |
+| 3rd Below | diatonic third below (follows Key) |
+| 6th Below | diatonic sixth below (follows Key) |
+| Triad Below | chord tones under the melody note |
+
+- With Stamp set, drawing a note also adds the companions in one undo step
+- **Edit → Harmonize** (`H`) adds companions under **selected** notes. Stamp must not be Single, or nothing is added
+- Mobile: Settings → Harmony Stamp
+
+### Song length
+- Toolbar **Length: N bars** opens a popup (presets 16 / 32 / 64 / 128, or any value 1–999)
+- Extends the piano-roll grid beyond the notes already placed (default 32 bars)
+- Mobile: Settings → Song Length
+
 ### File
 - **Ctrl + N**: New project
 - **Ctrl + O**: Open MIDI file
@@ -124,6 +159,20 @@ cmake --build .
 - **Ctrl + Shift + S**: Save As
 - **Ctrl + Z**: Undo
 - **Ctrl + Y**: Redo
+
+### Regression tests
+
+```bash
+cmake -S . -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build -C Release --output-on-failure
+```
+
+Tests exercise timing at several frame rates, tempo maps, seeking and loop
+boundaries, history after sorting/clamping/deleting tracks, MIDI round trips,
+recovery, atomic-save failures, the Save/Discard/Cancel workflow, drum-groove
+tiling, song length, and diatonic harmony intervals. The shared confirmation
+dialog is also rendered headlessly at a mobile-sized viewport.
 
 ## TODOS
 (there are also available in github project)

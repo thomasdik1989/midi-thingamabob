@@ -79,88 +79,45 @@ bool MidiPlayer::loadSoundFont(const std::string& filepath) {
     return audioSynth_.loadSoundFont(filepath);
 }
 
-void MidiPlayer::update(const Project& project, uint32_t currentTick, bool isPlaying) {
-    // Built-in synth is always available
-    bool hasOutput = useBuiltInSynth_ || isDeviceOpen();
-    if (!hasOutput) return;
-    
-    // If we just started playing or playback position jumped
-    if (isPlaying && (!wasPlaying_ || currentTick < lastTick_)) {
-        // Stop all currently playing notes
-        for (const auto& pn : playingNotes_) {
-            sendNoteOff(pn.channel, pn.pitch);
-        }
-        playingNotes_.clear();
-    }
-    
+void MidiPlayer::update(const Project& project, uint32_t currentTick, bool isPlaying,
+                        const std::vector<PlaybackSpan>& spans) {
     if (!isPlaying) {
-        // Stop all playing notes when playback stops
-        if (wasPlaying_) {
-            for (const auto& pn : playingNotes_) {
-                sendNoteOff(pn.channel, pn.pitch);
-            }
-            playingNotes_.clear();
-        }
+        if (wasPlaying_) panic();
         wasPlaying_ = false;
         lastTick_ = currentTick;
         return;
     }
-    
-    // Check for notes that should end
-    auto it = playingNotes_.begin();
-    while (it != playingNotes_.end()) {
-        if (currentTick >= it->endTick) {
-            sendNoteOff(it->channel, it->pitch);
-            it = playingNotes_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    
-    // Check if any track is solo'd (compute once)
-    bool hasSolo = false;
-    for (const auto& t : project.tracks) {
-        if (t.solo) { hasSolo = true; break; }
-    }
-    
-    // Check for new notes that should start
     for (const auto& track : project.tracks) {
-        if (track.muted) continue;
-        if (hasSolo && !track.solo) continue;
-        
-        // Apply track volume/pan to audio synth channel
-        if (useBuiltInSynth_) {
-            audioSynth_.setChannelVolume(track.channel, track.volume);
-            audioSynth_.setChannelPan(track.channel, track.pan);
-        }
-        
-        for (const auto& note : track.notes) {
-            // Check if note starts in the time window since last update
-            if (note.start_tick > lastTick_ && note.start_tick <= currentTick) {
-                // Check if this note isn't already playing
-                bool alreadyPlaying = false;
-                for (const auto& pn : playingNotes_) {
-                    if (pn.channel == track.channel && pn.pitch == note.pitch) {
-                        alreadyPlaying = true;
-                        break;
-                    }
+        audioSynth_.setChannelVolume(track.channel, track.volume);
+        audioSynth_.setChannelPan(track.channel, track.pan);
+    }
+    const auto fallback = std::vector<PlaybackSpan>{{double(lastTick_), double(currentTick), !wasPlaying_ || currentTick < lastTick_}};
+    for (const auto& span : spans.empty() ? fallback : spans) {
+        for (const auto& message : schedulePlayback(project, span)) {
+            const auto& data = message.data;
+            int channel = data[0] & 15;
+            int type = data[0] & 0xf0;
+            if (type == 0x90 && data.size() >= 3) sendNoteOn(channel, data[1], data[2]);
+            else if (type == 0x80 && data.size() >= 3) sendNoteOff(channel, data[1]);
+            else if (type == 0xc0 && data.size() >= 2) sendProgramChange(channel, data[1]);
+            else {
+                if (useBuiltInSynth_) {
+                    if (type == 0xb0 && data.size() >= 3) audioSynth_.controlChange(channel, data[1], data[2]);
+                    if (type == 0xe0 && data.size() >= 3) audioSynth_.pitchBend(channel, data[1] | (data[2] << 7));
                 }
-                
-                if (!alreadyPlaying) {
-                    sendNoteOn(track.channel, note.pitch, note.velocity);
-                    playingNotes_.push_back({track.channel, note.pitch, note.endTick()});
+                if (isDeviceOpen()) {
+                    try { midiOut_->sendMessage(&data); }
+                    catch (RtMidiError& error) { error.printMessage(); }
                 }
             }
         }
     }
-    
-    wasPlaying_ = isPlaying;
+    wasPlaying_ = true;
     lastTick_ = currentTick;
 }
 
 void MidiPlayer::panic() {
     allNotesOff();
-    playingNotes_.clear();
 }
 
 void MidiPlayer::previewNoteOn(int channel, int pitch, int velocity) {
@@ -241,17 +198,12 @@ void MidiPlayer::allNotesOff() {
     
     // Send to external MIDI device
     if (isDeviceOpen()) {
-        // Send All Notes Off (CC 123) on all channels
         for (int ch = 0; ch < 16; ++ch) {
-            std::vector<unsigned char> message;
-            message.push_back(0xB0 | ch); // Control Change
-            message.push_back(123);       // All Notes Off
-            message.push_back(0);
-            
-            try {
-                midiOut_->sendMessage(&message);
-            } catch (RtMidiError& error) {
-                error.printMessage();
+            for (int controller : {64, 120, 123}) {
+                std::vector<unsigned char> message{static_cast<unsigned char>(0xb0 | ch),
+                    static_cast<unsigned char>(controller), 0};
+                try { midiOut_->sendMessage(&message); }
+                catch (RtMidiError& error) { error.printMessage(); }
             }
         }
     }

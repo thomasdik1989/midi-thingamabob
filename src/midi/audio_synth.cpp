@@ -112,9 +112,89 @@ struct AudioSynth::Impl {
         return 440.0 * std::pow(2.0, (pitch - 69) / 12.0);
     }
 
+    float generateDrumSample(SimpleVoice& voice, double dt) {
+        voice.time += dt;
+
+        double attack = 0.001;
+        double release = 0.08;
+        int pitch = voice.pitch;
+
+        if (pitch == 35 || pitch == 36) {
+            attack = 0.001;
+            release = 0.18;
+        } else if (pitch == 38 || pitch == 40) {
+            attack = 0.001;
+            release = 0.12;
+        } else if (pitch == 42) {
+            attack = 0.001;
+            release = 0.04;
+        } else if (pitch == 46) {
+            attack = 0.001;
+            release = 0.10;
+        } else if (pitch == 49 || pitch == 57) {
+            attack = 0.002;
+            release = 0.45;
+        } else if (pitch >= 41 && pitch <= 50) {
+            attack = 0.001;
+            release = 0.14;
+        }
+
+        if (!voice.releasing) {
+            if (voice.time < attack) {
+                voice.envelope = voice.time / attack;
+            } else {
+                voice.envelope = 1.0;
+            }
+            if (voice.time > release) {
+                voice.releasing = true;
+                voice.releasePhase = 0.0;
+            }
+        } else {
+            voice.releasePhase += dt;
+            double release_progress = voice.releasePhase / release;
+            if (release_progress >= 1.0) {
+                voice.active = false;
+                return 0.0f;
+            }
+            voice.envelope = 1.0 - release_progress;
+        }
+
+        double sample = 0.0;
+        if (pitch == 35 || pitch == 36) {
+            double freq = 80.0 * std::exp(-voice.time * 18.0);
+            sample = std::sin(2.0 * M_PI * freq * voice.time) * std::exp(-voice.time * 10.0);
+        } else if (pitch == 38 || pitch == 40) {
+            double noise = std::sin(voice.time * 12000.0 + voice.phase * 97.0) *
+                           std::sin(voice.time * 9000.0 + voice.phase * 53.0);
+            sample = noise * std::exp(-voice.time * 22.0);
+        } else if (pitch == 42 || pitch == 44) {
+            double noise = std::sin(voice.time * 18000.0 + voice.phase * 31.0);
+            sample = noise * std::exp(-voice.time * 55.0);
+        } else if (pitch == 46) {
+            double noise = std::sin(voice.time * 14000.0 + voice.phase * 41.0);
+            sample = noise * std::exp(-voice.time * 18.0);
+        } else if (pitch == 49 || pitch == 57) {
+            double noise = std::sin(voice.time * 16000.0 + voice.phase * 17.0) *
+                           std::sin(voice.time * 11000.0 + voice.phase * 71.0);
+            sample = noise * std::exp(-voice.time * 4.0);
+        } else {
+            double freq = pitchToFreq(std::clamp(pitch, 36, 81));
+            voice.phase += freq * dt;
+            voice.phase -= std::floor(voice.phase);
+            sample = std::sin(2.0 * M_PI * voice.phase) * std::exp(-voice.time * 12.0);
+        }
+
+        float velocity_scale = static_cast<float>(std::pow(voice.velocity / 127.0, 2.0));
+        return static_cast<float>(sample * voice.envelope * velocity_scale * 0.7);
+    }
+
     // Generate a sample for a voice
     float generateSample(SimpleVoice& voice, double dt) {
         if (!voice.active) return 0.0f;
+
+        if (voice.channel == 9) {
+            return generateDrumSample(voice, dt);
+        }
 
         double freq = pitchToFreq(voice.pitch);
         int ch = voice.channel;
@@ -451,6 +531,10 @@ void AudioSynth::allNotesOff() {
     {
         std::lock_guard<std::mutex> sfLock(impl_->sfMutex);
         if (impl_->soundFont) {
+            for (int channel = 0; channel < 16; ++channel) {
+                tsf_channel_midi_control(impl_->soundFont, channel, 64, 0);
+                tsf_channel_midi_control(impl_->soundFont, channel, 120, 0);
+            }
             tsf_note_off_all(impl_->soundFont);
         }
     }
@@ -479,6 +563,29 @@ void AudioSynth::programChange(int channel, int program) {
     if (channel >= 0 && channel < 16) {
         impl_->channelPrograms[channel] = program;
     }
+}
+
+void AudioSynth::controlChange(int channel, int controller, int value) {
+    if (!initialized_) return;
+    {
+        std::lock_guard<std::mutex> lock(impl_->sfMutex);
+        if (impl_->soundFont) {
+            tsf_channel_midi_control(impl_->soundFont, channel, controller, value);
+            return;
+        }
+    }
+    if (controller == 123 || controller == 120) {
+        std::lock_guard<std::mutex> lock(impl_->voicesMutex);
+        for (auto& voice : impl_->voices) {
+            if (voice.channel == channel) voice.active = false;
+        }
+    }
+}
+
+void AudioSynth::pitchBend(int channel, int value) {
+    if (!initialized_) return;
+    std::lock_guard<std::mutex> lock(impl_->sfMutex);
+    if (impl_->soundFont) tsf_channel_set_pitchwheel(impl_->soundFont, channel, value);
 }
 
 void AudioSynth::setChannelVolume(int channel, float volume) {

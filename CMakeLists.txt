@@ -46,7 +46,13 @@ add_subdirectory(third_party/rtmidi)
 # Shared application core sources (used by both desktop and mobile)
 set(CORE_SOURCES
     src/app.cpp
+    src/file_safety.cpp
     src/midi/types.cpp
+    src/midi/atomic_file.cpp
+    src/midi/recovery.cpp
+    src/midi/playback.cpp
+    src/midi/patterns.cpp
+    src/midi/harmony.cpp
     src/midi/midi_file.cpp
     src/midi/midi_player.cpp
     src/midi/audio_synth.cpp
@@ -86,6 +92,7 @@ if(BUILD_MOBILE)
     set(MOBILE_SOURCES
         src/mobile/main_mobile.cpp
         src/mobile/mobile_app.cpp
+        src/mobile/file_safety_mobile.cpp
         src/mobile/touch_input.cpp
         src/mobile/swipe_nav.cpp
         src/mobile/toolbar_mobile.cpp
@@ -260,6 +267,7 @@ else()
     set(DESKTOP_SOURCES
         src/main.cpp
         ${CORE_SOURCES}
+        src/ui/file_safety.cpp
         src/ui/main_window.cpp
         src/ui/piano_roll.cpp
         src/ui/track_panel.cpp
@@ -307,4 +315,23 @@ endif()
 # Copy assets to the build output so they're available at runtime
 if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/assets)
     file(COPY ${CMAKE_CURRENT_LIST_DIR}/assets DESTINATION ${CMAKE_BINARY_DIR})
+endif()
+
+include(CTest)
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(MidiCoreTests tests/core_tests.cpp src/app.cpp src/midi/types.cpp
+        src/midi/midi_file.cpp src/midi/atomic_file.cpp src/midi/recovery.cpp src/midi/playback.cpp
+        src/midi/patterns.cpp src/midi/harmony.cpp)
+    target_include_directories(MidiCoreTests PRIVATE src third_party/midifile/include)
+    target_link_libraries(MidiCoreTests PRIVATE midifile)
+    add_test(NAME MidiCoreTests COMMAND MidiCoreTests)
+endif()
+
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT BUILD_MOBILE)
+    add_executable(MidiFileSafetyTests tests/file_safety_tests.cpp src/file_safety.cpp
+        src/app.cpp src/midi/types.cpp src/midi/midi_file.cpp src/midi/atomic_file.cpp src/midi/recovery.cpp
+        src/midi/patterns.cpp src/midi/harmony.cpp)
+    target_include_directories(MidiFileSafetyTests PRIVATE src third_party/midifile/include)
+    target_link_libraries(MidiFileSafetyTests PRIVATE midifile)
+    add_test(NAME MidiFileSafetyTests COMMAND MidiFileSafetyTests)
 endif()

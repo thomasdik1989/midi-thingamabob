@@ -72,6 +72,9 @@ jobs:
         if: runner.os == 'Windows'
         run: cmake --build build --config Release --parallel
 
+      - name: Core regression tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
       - name: Prepare artifact (Linux)
         if: runner.os == 'Linux'
         run: |

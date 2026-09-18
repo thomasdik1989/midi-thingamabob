@@ -1,7 +1,50 @@
 #include "piano_roll.h"
+#include "../midi/harmony.h"
+#include "../midi/patterns.h"
 #include "../midi/types.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+
+namespace {
+std::vector<size_t> selectedNoteIndices(const midi::Track& track) {
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < track.notes.size(); ++i) {
+        if (track.notes[i].selected) indices.push_back(i);
+    }
+    return indices;
+}
+
+std::string truncateLabel(const char* text, float max_width) {
+    if (!text || max_width <= 0.0f) return {};
+    ImVec2 size = ImGui::CalcTextSize(text);
+    if (size.x <= max_width) return text;
+    std::string out(text);
+    while (!out.empty() && ImGui::CalcTextSize((out + "...").c_str()).x > max_width) {
+        out.pop_back();
+    }
+    out += "...";
+    return out;
+}
+
+void applyVelocityChange(App& app, int trackIndex, const std::vector<midi::Note>& notes,
+                         int newVelocity, uint32_t clickTick) {
+    std::vector<size_t> indices;
+    std::vector<int> oldVelocities;
+    std::vector<int> newVelocities;
+    for (size_t i = 0; i < notes.size(); ++i) {
+        const auto& note = notes[i];
+        if (note.selected || (clickTick >= note.start_tick && clickTick < note.endTick())) {
+            indices.push_back(i);
+            oldVelocities.push_back(note.velocity);
+            newVelocities.push_back(newVelocity);
+        }
+    }
+    if (indices.empty()) return;
+    app.executeCommand(std::make_unique<ChangeVelocityCommand>(
+        app, trackIndex, std::move(indices), std::move(oldVelocities), std::move(newVelocities)));
+}
+}
 
 PianoRoll::PianoRoll(App& app, midi::MidiPlayer& player)
     : app_(app)
@@ -67,6 +110,14 @@ void PianoRoll::render() {
         drawSelectionBox(drawList, canvasPos);
     }
 
+    int selectedTrack = app_.getSelectedTrackIndex();
+    if (selectedTrack != lastSelectedTrack_) {
+        if (auto* track = app_.getSelectedTrack(); track && midi::isDrumTrack(*track)) {
+            focusDrumMap(gridPos, gridSize);
+        }
+        lastSelectedTrack_ = selectedTrack;
+    }
+
     // Handle input
     if (isHovered || isActive) {
         handleInput(gridPos, gridSize);
@@ -96,8 +147,14 @@ void PianoRoll::render() {
             int bar = project.tickToBar(tick);
             int beat = project.tickToBeatInBar(tick);
 
+            bool drum_track = false;
+            if (auto* track = app_.getSelectedTrack()) {
+                drum_track = midi::isDrumTrack(*track);
+            }
+
             ImGui::BeginTooltip();
-            ImGui::Text("%s | Bar %d Beat %d", midi::getNoteName(pitch).c_str(), bar, beat);
+            ImGui::Text("%s | Bar %d Beat %d",
+                        midi::getTrackPitchLabel(pitch, drum_track).c_str(), bar, beat);
             ImGui::EndTooltip();
         }
     }
@@ -112,14 +169,37 @@ void PianoRoll::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSi
     uint32_t startTick = static_cast<uint32_t>(std::max(0.0f, scrollX_));
     uint32_t endTick = static_cast<uint32_t>(scrollX_ + canvasSize.x / pixelsPerTick_);
 
-    int startPitch = std::max(0, yToPitch(canvasPos.y + canvasSize.y, canvasPos, canvasSize));
-    int endPitch = std::min(127, yToPitch(canvasPos.y, canvasPos, canvasSize));
+    const float row_height = rowHeight();
+    int startPitch = 0;
+    int endPitch = 127;
+    if (useDrumMap()) {
+        startPitch = midi::drumYToPitch(canvasPos.y + canvasSize.y, canvasPos.y, drumRowHeight_, scrollY_);
+        endPitch = midi::drumYToPitch(canvasPos.y, canvasPos.y, drumRowHeight_, scrollY_);
+        if (startPitch > endPitch) std::swap(startPitch, endPitch);
+    } else {
+        startPitch = std::max(0, yToPitch(canvasPos.y + canvasSize.y, canvasPos, canvasSize));
+        endPitch = std::min(127, yToPitch(canvasPos.y, canvasPos, canvasSize));
+    }
 
     // Draw horizontal lines (pitch rows)
     for (int pitch = startPitch; pitch <= endPitch; ++pitch) {
+        if (useDrumMap() && !midi::isDrumPitch(pitch)) continue;
         float y = pitchToY(pitch, canvasPos, canvasSize);
 
-        // Black key rows get darker background
+        if (useDrumMap()) {
+            drawList->AddRectFilled(
+                ImVec2(canvasPos.x, y),
+                ImVec2(canvasPos.x + canvasSize.x, y + row_height),
+                (pitch % 2 == 0) ? IM_COL32(24, 24, 30, 255) : IM_COL32(20, 20, 26, 255)
+            );
+            drawList->AddLine(
+                ImVec2(canvasPos.x, y + row_height),
+                ImVec2(canvasPos.x + canvasSize.x, y + row_height),
+                IM_COL32(45, 45, 55, 255)
+            );
+            continue;
+        }
+
         int noteInOctave = pitch % 12;
         bool isBlackKey = (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
                           noteInOctave == 8 || noteInOctave == 10);
@@ -127,22 +207,21 @@ void PianoRoll::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSi
         if (isBlackKey) {
             drawList->AddRectFilled(
                 ImVec2(canvasPos.x, y),
-                ImVec2(canvasPos.x + canvasSize.x, y + noteHeight_),
+                ImVec2(canvasPos.x + canvasSize.x, y + row_height),
                 IM_COL32(20, 20, 25, 255)
             );
         }
 
-        // C notes get a highlight line
         if (noteInOctave == 0) {
             drawList->AddLine(
-                ImVec2(canvasPos.x, y + noteHeight_),
-                ImVec2(canvasPos.x + canvasSize.x, y + noteHeight_),
+                ImVec2(canvasPos.x, y + row_height),
+                ImVec2(canvasPos.x + canvasSize.x, y + row_height),
                 IM_COL32(60, 60, 70, 255)
             );
         } else {
             drawList->AddLine(
-                ImVec2(canvasPos.x, y + noteHeight_),
-                ImVec2(canvasPos.x + canvasSize.x, y + noteHeight_),
+                ImVec2(canvasPos.x, y + row_height),
+                ImVec2(canvasPos.x + canvasSize.x, y + row_height),
                 IM_COL32(40, 40, 50, 255)
             );
         }
@@ -197,49 +276,63 @@ void PianoRoll::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSi
 }
 
 void PianoRoll::drawKeyboard(ImDrawList* drawList, ImVec2 pos, ImVec2 size) {
-    int startPitch = std::max(0, yToPitch(pos.y + size.y, pos, size) - 1);
-    int endPitch = std::min(127, yToPitch(pos.y, pos, size) + 1);
-
     ImVec2 canvasPos = ImVec2(pos.x + KEYBOARD_WIDTH, pos.y);
+    const float row_height = rowHeight();
+    const float text_height = ImGui::GetTextLineHeight();
+    const bool drum_map = useDrumMap();
+
+    int startPitch = 0;
+    int endPitch = 127;
+    if (drum_map) {
+        startPitch = midi::drumYToPitch(pos.y + size.y, canvasPos.y, drumRowHeight_, scrollY_);
+        endPitch = midi::drumYToPitch(pos.y, canvasPos.y, drumRowHeight_, scrollY_);
+        if (startPitch > endPitch) std::swap(startPitch, endPitch);
+    } else {
+        startPitch = std::max(0, yToPitch(pos.y + size.y, canvasPos, ImVec2(size.x - KEYBOARD_WIDTH, size.y)) - 1);
+        endPitch = std::min(127, yToPitch(pos.y, canvasPos, ImVec2(size.x - KEYBOARD_WIDTH, size.y)) + 1);
+    }
 
     for (int pitch = startPitch; pitch <= endPitch; ++pitch) {
+        if (drum_map && !midi::isDrumPitch(pitch)) continue;
+
         float y = pitchToY(pitch, canvasPos, ImVec2(size.x - KEYBOARD_WIDTH, size.y));
+        ImU32 keyColor = (pitch == previewingPitch_)
+            ? IM_COL32(100, 150, 200, 255)
+            : (drum_map ? IM_COL32(42, 42, 48, 255) : IM_COL32(200, 200, 210, 255));
 
-        int noteInOctave = pitch % 12;
-        bool isBlackKey = (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
-                          noteInOctave == 8 || noteInOctave == 10);
-        bool isC = (noteInOctave == 0);
-
-        ImU32 keyColor;
-        if (pitch == previewingPitch_) {
-            keyColor = IM_COL32(100, 150, 200, 255);
-        } else if (isBlackKey) {
-            keyColor = IM_COL32(30, 30, 35, 255);
-        } else {
-            keyColor = IM_COL32(200, 200, 210, 255);
+        if (!drum_map) {
+            int noteInOctave = pitch % 12;
+            bool isBlackKey = (noteInOctave == 1 || noteInOctave == 3 || noteInOctave == 6 ||
+                              noteInOctave == 8 || noteInOctave == 10);
+            if (isBlackKey) keyColor = IM_COL32(30, 30, 35, 255);
         }
 
-        float keyWidth = isBlackKey ? KEYBOARD_WIDTH * 0.6f : KEYBOARD_WIDTH;
+        float keyWidth = drum_map ? KEYBOARD_WIDTH : ((pitch % 12 == 1 || pitch % 12 == 3 || pitch % 12 == 6 ||
+            pitch % 12 == 8 || pitch % 12 == 10) ? KEYBOARD_WIDTH * 0.6f : KEYBOARD_WIDTH);
 
         drawList->AddRectFilled(
             ImVec2(pos.x, y),
-            ImVec2(pos.x + keyWidth, y + noteHeight_),
+            ImVec2(pos.x + keyWidth, y + row_height),
             keyColor
         );
-
-        // Key border
         drawList->AddRect(
             ImVec2(pos.x, y),
-            ImVec2(pos.x + keyWidth, y + noteHeight_),
+            ImVec2(pos.x + keyWidth, y + row_height),
             IM_COL32(50, 50, 60, 255)
         );
 
-        // Note label for C notes
-        if (isC && noteHeight_ >= 10) {
-            std::string label = midi::getNoteName(pitch);
+        bool show_label = drum_map
+            ? (row_height >= text_height + 2.0f)
+            : ((pitch % 12 == 0) && row_height >= 10.0f);
+        if (show_label) {
+            std::string label = truncateLabel(
+                midi::getTrackPitchLabel(pitch, drum_map).c_str(), KEYBOARD_WIDTH - 8.0f);
+            ImU32 labelColor = drum_map
+                ? IM_COL32(235, 235, 245, 255)
+                : IM_COL32(50, 50, 60, 255);
             drawList->AddText(
                 ImVec2(pos.x + 4, y + 1),
-                IM_COL32(50, 50, 60, 255),
+                labelColor,
                 label.c_str()
             );
         }
@@ -312,6 +405,7 @@ static ImU32 getTrackColor(int trackIndex, int velocity, bool isSelected, bool i
 void PianoRoll::drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize) {
     const auto& project = app_.getProject();
     int selectedTrackIndex = app_.getSelectedTrackIndex();
+    const float row_height = rowHeight();
 
     drawList->PushClipRect(canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y), true);
 
@@ -327,11 +421,11 @@ void PianoRoll::drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasS
             float y = pitchToY(note.pitch, canvasPos, canvasSize);
 
             if (x2 < canvasPos.x || x1 > canvasPos.x + canvasSize.x) continue;
-            if (y + noteHeight_ < canvasPos.y || y > canvasPos.y + canvasSize.y) continue;
+            if (y + row_height < canvasPos.y || y > canvasPos.y + canvasSize.y) continue;
 
             ImU32 noteColor = getTrackColor(trackIdx, note.velocity, false, false);
-            drawList->AddRectFilled(ImVec2(x1, y + 1), ImVec2(x2, y + noteHeight_ - 1), noteColor);
-            drawList->AddRect(ImVec2(x1, y + 1), ImVec2(x2, y + noteHeight_ - 1), IM_COL32(0, 0, 0, 50));
+            drawList->AddRectFilled(ImVec2(x1, y + 1), ImVec2(x2, y + row_height - 1), noteColor);
+            drawList->AddRect(ImVec2(x1, y + 1), ImVec2(x2, y + row_height - 1), IM_COL32(0, 0, 0, 50));
         }
     }
 
@@ -347,13 +441,13 @@ void PianoRoll::drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasS
             float y = pitchToY(note.pitch, canvasPos, canvasSize);
 
             if (x2 < canvasPos.x || x1 > canvasPos.x + canvasSize.x) continue;
-            if (y + noteHeight_ < canvasPos.y || y > canvasPos.y + canvasSize.y) continue;
+            if (y + row_height < canvasPos.y || y > canvasPos.y + canvasSize.y) continue;
 
             ImU32 noteColor = getTrackColor(selectedTrackIndex, note.velocity, note.selected, true);
-            drawList->AddRectFilled(ImVec2(x1, y + 1), ImVec2(x2, y + noteHeight_ - 1), noteColor);
+            drawList->AddRectFilled(ImVec2(x1, y + 1), ImVec2(x2, y + row_height - 1), noteColor);
 
             ImU32 borderColor = note.selected ? IM_COL32(255, 255, 200, 255) : IM_COL32(0, 0, 0, 100);
-            drawList->AddRect(ImVec2(x1, y + 1), ImVec2(x2, y + noteHeight_ - 1), borderColor);
+            drawList->AddRect(ImVec2(x1, y + 1), ImVec2(x2, y + row_height - 1), borderColor);
         }
     }
 
@@ -366,8 +460,8 @@ void PianoRoll::drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasS
         float x2 = tickToX(endTick, canvasPos, canvasSize);
         float y = pitchToY(creatingNotePitch_, canvasPos, canvasSize);
 
-        drawList->AddRectFilled(ImVec2(x1, y + 1), ImVec2(x2, y + noteHeight_ - 1), IM_COL32(100, 200, 255, 150));
-        drawList->AddRect(ImVec2(x1, y + 1), ImVec2(x2, y + noteHeight_ - 1), IM_COL32(100, 200, 255, 255));
+        drawList->AddRectFilled(ImVec2(x1, y + 1), ImVec2(x2, y + row_height - 1), IM_COL32(100, 200, 255, 150));
+        drawList->AddRect(ImVec2(x1, y + 1), ImVec2(x2, y + row_height - 1), IM_COL32(100, 200, 255, 255));
     }
 
     drawList->PopClipRect();
@@ -474,32 +568,23 @@ void PianoRoll::drawVelocityLane(ImDrawList* drawList, ImVec2 pos, ImVec2 size) 
         mousePos.y >= pos.y && mousePos.y <= pos.y + size.y) {
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            app_.beginUndoGroup();
             mode_ = InteractionMode::EditingVelocity;
         }
     }
 
     if (mode_ == InteractionMode::EditingVelocity) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            // Set velocity based on Y position within the lane
             float relY = 1.0f - (mousePos.y - pos.y) / size.y;
             int newVelocity = std::clamp(static_cast<int>(relY * 127), 1, 127);
             uint32_t clickTick = xToTick(mousePos.x, pos, size);
-
-            // Find notes near the click position and set their velocity
-            for (auto& note : track->notes) {
-                if (note.selected ||
-                    (clickTick >= note.start_tick && clickTick < note.endTick())) {
-                    if (note.selected) {
-                        note.velocity = newVelocity;
-                    } else if (clickTick >= note.start_tick && clickTick < note.endTick()) {
-                        note.velocity = newVelocity;
-                    }
-                }
+            if (auto* track = app_.getSelectedTrack()) {
+                applyVelocityChange(app_, app_.getSelectedTrackIndex(), track->notes, newVelocity, clickTick);
             }
-            app_.getProject().modified = true;
         }
 
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            app_.endUndoGroup();
             mode_ = InteractionMode::None;
         }
     }
@@ -592,6 +677,8 @@ void PianoRoll::handleInput(ImVec2 canvasPos, ImVec2 canvasSize) {
             // Right click: set playhead or set loop region (with Shift)
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                 if (io.KeyShift) {
+                    app_.beginUndoGroup();
+                    auto transaction = app_.edit();
                     // Start setting loop region
                     mode_ = InteractionMode::SettingLoopRegion;
                     uint32_t tick = xToTick(mousePos.x, canvasPos, canvasSize);
@@ -608,6 +695,7 @@ void PianoRoll::handleInput(ImVec2 canvasPos, ImVec2 canvasSize) {
 
         case InteractionMode::SettingLoopRegion:
             if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+                auto transaction = app_.edit();
                 uint32_t tick = xToTick(mousePos.x, canvasPos, canvasSize);
                 tick = midi::snapToGrid(tick, app_.getProject().ticks_per_quarter, midi::GridSnap::Quarter);
                 auto& project = app_.getProject();
@@ -618,8 +706,10 @@ void PianoRoll::handleInput(ImVec2 canvasPos, ImVec2 canvasSize) {
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
                 auto& project = app_.getProject();
                 if (project.loop_end <= project.loop_start) {
+                    auto transaction = app_.edit();
                     project.loop_enabled = false;
                 }
+                app_.endUndoGroup();
                 mode_ = InteractionMode::None;
             }
             break;
@@ -672,8 +762,10 @@ void PianoRoll::handleNoteCreation(ImVec2 canvasPos, ImVec2 canvasSize) {
 
             track->clearSelection();
 
-            auto cmd = std::make_unique<AddNotesCommand>(app_, app_.getSelectedTrackIndex(),
-                                                         std::vector<midi::Note>{newNote});
+            auto notes = midi::buildStampedNotes(
+                newNote, app_.getHarmonyKind(), app_.getHarmonyTonic(), app_.getHarmonyMinor());
+            auto cmd = std::make_unique<AddNotesCommand>(
+                app_, app_.getSelectedTrackIndex(), std::move(notes));
             app_.executeCommand(std::move(cmd));
         }
 
@@ -732,17 +824,12 @@ void PianoRoll::handleNoteDragging(ImVec2 canvasPos, ImVec2 canvasSize) {
 
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (hasDragged_ && (pitchDelta != 0 || tickDelta != 0)) {
-            auto* track = app_.getSelectedTrack();
-            if (track) {
-                for (auto& note : track->notes) {
-                    if (note.selected) {
-                        note.pitch = std::clamp(note.pitch + pitchDelta, 0, 127);
-                        int32_t newTick = static_cast<int32_t>(note.start_tick) + tickDelta;
-                        note.start_tick = static_cast<uint32_t>(std::max(0, newTick));
-                    }
+            if (auto* track = app_.getSelectedTrack()) {
+                auto indices = selectedNoteIndices(*track);
+                if (!indices.empty()) {
+                    app_.executeCommand(std::make_unique<MoveNotesCommand>(
+                        app_, app_.getSelectedTrackIndex(), indices, pitchDelta, tickDelta));
                 }
-                track->sortNotes();
-                app_.getProject().modified = true;
             }
         }
 
@@ -761,23 +848,40 @@ void PianoRoll::handleNoteResizing(ImVec2 canvasPos, ImVec2 canvasSize) {
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         auto* track = app_.getSelectedTrack();
         if (track && tickDelta != 0) {
-            for (auto& note : track->notes) {
-                if (note.selected) {
-                    if (resizingFromRight_) {
-                        int32_t newDuration = static_cast<int32_t>(note.duration) + tickDelta;
-                        note.duration = static_cast<uint32_t>(std::max(1, newDuration));
-                    } else {
+            auto indices = selectedNoteIndices(*track);
+            if (!indices.empty()) {
+                if (resizingFromRight_) {
+                    std::vector<uint32_t> oldDurations;
+                    std::vector<uint32_t> newDurations;
+                    for (size_t index : indices) {
+                        oldDurations.push_back(track->notes[index].duration);
+                        int32_t newDuration = static_cast<int32_t>(track->notes[index].duration) + tickDelta;
+                        newDurations.push_back(static_cast<uint32_t>(std::max(1, newDuration)));
+                    }
+                    app_.executeCommand(std::make_unique<ResizeNotesCommand>(
+                        app_, app_.getSelectedTrackIndex(), indices, oldDurations, newDurations));
+                } else {
+                    std::vector<uint32_t> oldDurations;
+                    std::vector<uint32_t> newDurations;
+                    for (size_t index : indices) {
+                        const auto& note = track->notes[index];
+                        oldDurations.push_back(note.duration);
                         int32_t newStart = static_cast<int32_t>(note.start_tick) + tickDelta;
                         int32_t newDuration = static_cast<int32_t>(note.duration) - tickDelta;
                         if (newDuration > 0 && newStart >= 0) {
-                            note.start_tick = static_cast<uint32_t>(newStart);
-                            note.duration = static_cast<uint32_t>(newDuration);
+                            newDurations.push_back(static_cast<uint32_t>(newDuration));
+                        } else {
+                            newDurations.push_back(note.duration);
                         }
                     }
+                    app_.beginUndoGroup();
+                    app_.executeCommand(std::make_unique<MoveNotesCommand>(
+                        app_, app_.getSelectedTrackIndex(), indices, 0, tickDelta));
+                    app_.executeCommand(std::make_unique<ResizeNotesCommand>(
+                        app_, app_.getSelectedTrackIndex(), indices, oldDurations, newDurations));
+                    app_.endUndoGroup();
                 }
             }
-            track->sortNotes();
-            app_.getProject().modified = true;
         }
 
         mode_ = InteractionMode::None;
@@ -835,7 +939,10 @@ void PianoRoll::handleScrollAndZoom(ImVec2 canvasPos, ImVec2 canvasSize) {
     }
 
     scrollX_ = std::clamp(scrollX_, 0.0f, std::max(0.0f, maxScrollX));
-    scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, 127.0f * noteHeight_ - canvasSize.y));
+    float maxScrollY = useDrumMap()
+        ? static_cast<float>(midi::DRUM_PITCH_COUNT) * drumRowHeight_ - canvasSize.y
+        : 127.0f * noteHeight_ - canvasSize.y;
+    scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, maxScrollY));
 }
 
 void PianoRoll::autoFollowPlayhead(ImVec2 canvasPos, ImVec2 canvasSize) {
@@ -872,10 +979,16 @@ uint32_t PianoRoll::xToTick(float x, ImVec2 canvasPos, ImVec2 canvasSize) const 
 }
 
 float PianoRoll::pitchToY(int pitch, ImVec2 canvasPos, ImVec2 canvasSize) const {
+    if (useDrumMap()) {
+        return midi::drumPitchToY(pitch, canvasPos.y, drumRowHeight_, scrollY_);
+    }
     return canvasPos.y + (127 - pitch) * noteHeight_ - scrollY_;
 }
 
 int PianoRoll::yToPitch(float y, ImVec2 canvasPos, ImVec2 canvasSize) const {
+    if (useDrumMap()) {
+        return midi::drumYToPitch(y, canvasPos.y, drumRowHeight_, scrollY_);
+    }
     int pitch = 127 - static_cast<int>((y - canvasPos.y + scrollY_) / noteHeight_);
     return std::clamp(pitch, 0, 127);
 }
@@ -896,7 +1009,7 @@ PianoRoll::NoteHit PianoRoll::hitTestNote(ImVec2 mousePos, ImVec2 canvasPos, ImV
         float y = pitchToY(note.pitch, canvasPos, canvasSize);
 
         if (mousePos.x >= x1 && mousePos.x <= x2 &&
-            mousePos.y >= y && mousePos.y <= y + noteHeight_) {
+            mousePos.y >= y && mousePos.y <= y + rowHeight()) {
 
             result.noteIndex = i;
 
@@ -925,4 +1038,21 @@ ImU32 PianoRoll::velocityToColor(int velocity) const {
     int g = static_cast<int>(130 - t * 30);
     int b = static_cast<int>(200 - t * 150);
     return IM_COL32(r, g, b, 255);
+}
+
+bool PianoRoll::useDrumMap() const {
+    auto* track = app_.getSelectedTrack();
+    return track && midi::isDrumTrack(*track);
+}
+
+float PianoRoll::rowHeight() const {
+    return useDrumMap() ? drumRowHeight_ : noteHeight_;
+}
+
+void PianoRoll::focusDrumMap(ImVec2 canvasPos, ImVec2 canvasSize) {
+    const int focus_pitch = 39;
+    float y = midi::drumPitchToY(focus_pitch, canvasPos.y, drumRowHeight_, 0.0f);
+    scrollY_ = y - canvasPos.y - canvasSize.y * 0.5f + drumRowHeight_ * 0.5f;
+    float maxScrollY = static_cast<float>(midi::DRUM_PITCH_COUNT) * drumRowHeight_ - canvasSize.y;
+    scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, maxScrollY));
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "playback.h"
 #include "audio_synth.h"
 #include <RtMidi.h>
 #include <memory>
@@ -30,7 +31,8 @@ public:
     bool loadSoundFont(const std::string& filepath);
 
     // Playback
-    void update(const Project& project, uint32_t currentTick, bool isPlaying);
+    void update(const Project& project, uint32_t currentTick, bool isPlaying,
+                const std::vector<PlaybackSpan>& spans = {});
     void panic(); // All notes off
 
     // Preview note (for clicking on piano roll)
@@ -52,14 +54,6 @@ private:
     // External MIDI output
     std::unique_ptr<RtMidiOut> midiOut_;
     int currentDevice_ = -1;
-
-    // Track which notes are currently playing
-    struct PlayingNote {
-        int channel;
-        int pitch;
-        uint32_t endTick;
-    };
-    std::vector<PlayingNote> playingNotes_;
 
     uint32_t lastTick_ = 0;
     bool wasPlaying_ = false;

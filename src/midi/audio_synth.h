@@ -31,6 +31,9 @@ public:
     // Program change
     void programChange(int channel, int program);
     
+    void controlChange(int channel, int controller, int value);
+    void pitchBend(int channel, int value);
+
     // Per-channel volume and pan
     void setChannelVolume(int channel, float volume);
     void setChannelPan(int channel, float pan);
