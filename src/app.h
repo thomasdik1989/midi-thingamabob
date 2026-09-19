@@ -5,7 +5,6 @@
 #include "midi/playback.h"
 #include <memory>
 #include <deque>
-#include <functional>
 
 // Forward declarations
 class Command;
@@ -97,6 +96,8 @@ public:
     void copySelectedNotes();
     void pasteNotes();
     void quantizeSelectedNotes();
+    void moveSelectedNotes(int pitchDelta, int32_t tickDelta);
+    void resizeSelectedNotes(int32_t tickDelta, bool fromRight);
 
     // Clipboard
     bool hasClipboard() const { return !clipboard_.empty(); }
@@ -151,15 +152,12 @@ class Command {
 public:
     virtual ~Command() = default;
     virtual void execute() = 0;
-    virtual std::string getName() const = 0;
 };
 
-// Add notes command
 class AddNotesCommand : public Command {
 public:
     AddNotesCommand(App& app, int trackIndex, std::vector<midi::Note> notes);
     void execute() override;
-    std::string getName() const override { return "Add Notes"; }
 
 private:
     App& app_;
@@ -167,12 +165,10 @@ private:
     std::vector<midi::Note> notes_;
 };
 
-// Delete notes command
 class DeleteNotesCommand : public Command {
 public:
     DeleteNotesCommand(App& app, int trackIndex, std::vector<midi::Note> notes);
     void execute() override;
-    std::string getName() const override { return "Delete Notes"; }
 
 private:
     App& app_;
@@ -180,13 +176,11 @@ private:
     std::vector<midi::Note> notes_;
 };
 
-// Move notes command
 class MoveNotesCommand : public Command {
 public:
     MoveNotesCommand(App& app, int trackIndex, std::vector<size_t> noteIndices,
                      int pitchDelta, int32_t tickDelta);
     void execute() override;
-    std::string getName() const override { return "Move Notes"; }
 
 private:
     App& app_;
@@ -196,48 +190,51 @@ private:
     int32_t tickDelta_;
 };
 
-// Resize notes command
 class ResizeNotesCommand : public Command {
 public:
     ResizeNotesCommand(App& app, int trackIndex, std::vector<size_t> noteIndices,
-                       std::vector<uint32_t> oldDurations, std::vector<uint32_t> newDurations);
+                       std::vector<uint32_t> newDurations);
     void execute() override;
-    std::string getName() const override { return "Resize Notes"; }
 
 private:
     App& app_;
     int trackIndex_;
     std::vector<size_t> noteIndices_;
-    std::vector<uint32_t> oldDurations_;
     std::vector<uint32_t> newDurations_;
 };
 
-// Change velocity command
 class ChangeVelocityCommand : public Command {
 public:
     ChangeVelocityCommand(App& app, int trackIndex, std::vector<size_t> noteIndices,
-                          std::vector<int> oldVelocities, std::vector<int> newVelocities);
+                          std::vector<int> newVelocities);
     void execute() override;
-    std::string getName() const override { return "Change Velocity"; }
 
 private:
     App& app_;
     int trackIndex_;
     std::vector<size_t> noteIndices_;
-    std::vector<int> oldVelocities_;
     std::vector<int> newVelocities_;
 };
 
-// Change track instrument command
 class ChangeInstrumentCommand : public Command {
 public:
-    ChangeInstrumentCommand(App& app, int trackIndex, int oldProgram, int newProgram);
+    ChangeInstrumentCommand(App& app, int trackIndex, int newProgram);
     void execute() override;
-    std::string getName() const override { return "Change Instrument"; }
 
 private:
     App& app_;
     int trackIndex_;
-    int oldProgram_;
     int newProgram_;
+};
+
+class QuantizeNotesCommand : public Command {
+public:
+    QuantizeNotesCommand(App& app, int trackIndex, int ticksPerQuarter, midi::GridSnap snap);
+    void execute() override;
+
+private:
+    App& app_;
+    int trackIndex_;
+    int ticksPerQuarter_;
+    midi::GridSnap snap_;
 };

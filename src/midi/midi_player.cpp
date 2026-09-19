@@ -1,4 +1,5 @@
 #include "midi_player.h"
+#include "patterns.h"
 #include <RtMidi.h>
 #include <algorithm>
 
@@ -75,8 +76,41 @@ bool MidiPlayer::isDeviceOpen() const {
     return midiOut_ && midiOut_->isPortOpen();
 }
 
-bool MidiPlayer::loadSoundFont(const std::string& filepath) {
-    return audioSynth_.loadSoundFont(filepath);
+bool MidiPlayer::loadSoundFont(const std::string& filepath, const Project* project) {
+    if (!audioSynth_.loadSoundFont(filepath)) {
+        return false;
+    }
+    if (project) {
+        syncTrackPrograms(*project);
+    }
+    return true;
+}
+
+void MidiPlayer::syncTrackPrograms(const Project& project) {
+    for (const auto& track : project.tracks) {
+        if (isDrumTrack(track)) continue;
+        sendProgramChange(track.channel, track.program);
+    }
+}
+
+void MidiPlayer::allNotesOffChannel(int channel) {
+    if (useBuiltInSynth_) {
+        audioSynth_.allNotesOffChannel(channel);
+    }
+
+    if (isDeviceOpen()) {
+        for (int controller : {64, 120, 123}) {
+            std::vector<unsigned char> message{
+                static_cast<unsigned char>(0xb0 | (channel & 0x0F)),
+                static_cast<unsigned char>(controller),
+                0};
+            try {
+                midiOut_->sendMessage(&message);
+            } catch (RtMidiError& error) {
+                error.printMessage();
+            }
+        }
+    }
 }
 
 void MidiPlayer::update(const Project& project, uint32_t currentTick, bool isPlaying,

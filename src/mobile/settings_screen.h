@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 struct NineSliceTheme;
+class FileOpsMobile;
 
 // Advanced settings screen (right swipe screen).
 // Card-based sections: Time Signature, Loop Region, Master Volume,
@@ -15,6 +16,7 @@ public:
 
     void render(float width, float height);
     void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
+    void setFileOps(FileOpsMobile* file_ops) { fileOps_ = file_ops; }
 
 private:
     // Section renderers (each renders a card)
@@ -26,6 +28,7 @@ private:
     void renderSongLength(float cardWidth);
     void renderPatterns(float cardWidth);
     void renderMidiOutput(float cardWidth);
+    void renderSoundFont(float cardWidth);
     void renderExport(float cardWidth);
 
     // Helper: draw a card background and return inner position
@@ -34,6 +37,7 @@ private:
 
     App& app_;
     midi::MidiPlayer& player_;
+    FileOpsMobile* fileOps_ = nullptr;
     const NineSliceTheme* theme_ = nullptr;
 
     static constexpr float CARD_MARGIN = 8.0f;

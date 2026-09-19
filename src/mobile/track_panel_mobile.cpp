@@ -50,22 +50,18 @@ void TrackPanelMobile::processGesture(const TouchGesture& gesture) {
             }
         }
     } else if (gesture.type == GestureType::Tap) {
-        // If delete is revealed and tap is on delete button, delete the track
-        // This is not working ATM; it worked and then I borked it.
         if (swipeDeleteRevealed_ && swipingTrackIndex_ >= 0) {
-            // Check if tap is in the delete button area (right side of card)
             if (swipingTrackIndex_ < static_cast<int>(cardBounds_.size())) {
-                auto& bounds = cardBounds_[swipingTrackIndex_];
-                if (gesture.y >= bounds.y && gesture.y < bounds.y + bounds.height) {
-                    // Check if tap is on the right (delete button area)
-                    float cardRight = ImGui::GetIO().DisplaySize.x - CARD_MARGIN;
-                    if (gesture.x >= cardRight - DELETE_BUTTON_WIDTH) {
-                        app_.removeTrack(swipingTrackIndex_);
-                        swipingTrackIndex_ = -1;
-                        swipeOffset_ = 0.0f;
-                        swipeDeleteRevealed_ = false;
-                        return;
-                    }
+                const auto& bounds = cardBounds_[swipingTrackIndex_];
+                float delete_left = bounds.x + bounds.width + swipeOffset_;
+                float delete_right = bounds.x + bounds.width;
+                if (gesture.x >= delete_left && gesture.x <= delete_right &&
+                    gesture.y >= bounds.y && gesture.y < bounds.y + bounds.height) {
+                    app_.removeTrack(swipingTrackIndex_);
+                    swipingTrackIndex_ = -1;
+                    swipeOffset_ = 0.0f;
+                    swipeDeleteRevealed_ = false;
+                    return;
                 }
             }
             // Tap elsewhere: cancel swipe
@@ -118,7 +114,7 @@ void TrackPanelMobile::renderTrackList(float width, float height) {
 
         // Record card bounds for gesture hit testing
         ImVec2 cardScreenPos = ImGui::GetCursorScreenPos();
-        cardBounds_.push_back({cardScreenPos.y, CARD_HEIGHT});
+        cardBounds_.push_back({cardScreenPos.x, cardScreenPos.y, cardWidth, CARD_HEIGHT});
 
         // Apply swipe offset if this card is being swiped
         float offsetX = (i == swipingTrackIndex_) ? swipeOffset_ : 0.0f;
@@ -273,10 +269,10 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
             for (int c = 0; c < 16; ++c) {
                 bool selected = (c == category);
                 if (ImGui::Selectable(std::string(midi::getCategoryName(c)).c_str(), selected)) {
-                    int oldProgram = track.program;
                     int newProgram = c * 8;
                     app_.executeCommand(std::make_unique<ChangeInstrumentCommand>(
-                        app_, editingTrackIndex_, oldProgram, newProgram));
+                        app_, editingTrackIndex_, newProgram));
+                    player_.allNotesOffChannel(track.channel);
                     player_.sendProgramChange(track.channel, newProgram);
                 }
             }
@@ -293,9 +289,9 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
                 int prog = baseProgram + i;
                 bool selected = (prog == track.program);
                 if (ImGui::Selectable(std::string(midi::getInstrumentName(prog)).c_str(), selected)) {
-                    int oldProgram = track.program;
                     app_.executeCommand(std::make_unique<ChangeInstrumentCommand>(
-                        app_, editingTrackIndex_, oldProgram, prog));
+                        app_, editingTrackIndex_, prog));
+                    player_.allNotesOffChannel(track.channel);
                     player_.sendProgramChange(track.channel, prog);
                 }
             }

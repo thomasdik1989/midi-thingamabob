@@ -224,6 +224,13 @@ int main(int argc, char* argv[]) {
                 mobileApp.requestClose();
             }
 
+            if (event.type == SDL_WINDOWEVENT &&
+                (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
+                // Layout follows the new logical size on the next frame.
+                // Placeholder so I don't forget or need to read my notes.
+            }
+
             if (event.type == SDL_APP_WILLENTERBACKGROUND || event.type == SDL_APP_TERMINATING)
                 mobileApp.getApp().autosave();
 

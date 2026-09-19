@@ -171,19 +171,20 @@ ctest --test-dir build -C Release --output-on-failure
 Tests exercise timing at several frame rates, tempo maps, seeking and loop
 boundaries, history after sorting/clamping/deleting tracks, MIDI round trips,
 recovery, atomic-save failures, the Save/Discard/Cancel workflow, drum-groove
-tiling, song length, and diatonic harmony intervals. The shared confirmation
-dialog is also rendered headlessly at a mobile-sized viewport.
+tiling, song length, harmony stamps, mute/solo playback filtering, resize/copy/paste,
+and grid snap helpers.
+
+Run tests with:
+
+```bash
+./build.sh test
+```
 
 ## TODOS
 (there are also available in github project)
-- Allow for other soundfonts.
-- Remove std; we should be able to make it work without.
-- Add tests for each of the functionalities so we don't break things.
-- Add more advanced UI for selecting and saving files.
 - Test external midi devices (did copy from example but I need to test this with my ultranova :D)
-- Make mobile UI rotate when the phone rotates.
 - Improve mobile esthetic, it's purely functional now.
-- Fix file browser + add file browser on desktop.
+- Native iOS/Android file pickers (in-app browser exists on desktop and mobile preview).
 
 ## License
 

@@ -28,7 +28,7 @@ public:
     int getCurrentDevice() const { return currentDevice_; }
 
     // Load SoundFont for better audio quality
-    bool loadSoundFont(const std::string& filepath);
+    bool loadSoundFont(const std::string& filepath, const Project* project = nullptr);
 
     // Playback
     void update(const Project& project, uint32_t currentTick, bool isPlaying,
@@ -41,6 +41,8 @@ public:
 
     // Send program change
     void sendProgramChange(int channel, int program);
+    void syncTrackPrograms(const Project& project);
+    void allNotesOffChannel(int channel);
 
 private:
     void sendNoteOn(int channel, int pitch, int velocity);

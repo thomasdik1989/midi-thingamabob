@@ -47,6 +47,7 @@ private:
     char filePathBuffer_[512] = {0};
     std::string saveErrorMessage_;
     std::string openErrorMessage_;
+    std::string browseDirectory_;
 
     // UI state
     bool firstFrame_ = true;

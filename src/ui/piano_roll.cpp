@@ -1,6 +1,7 @@
 #include "piano_roll.h"
 #include "../midi/harmony.h"
 #include "../midi/patterns.h"
+#include "../midi/piano_roll_view.h"
 #include "../midi/types.h"
 #include <algorithm>
 #include <cmath>
@@ -30,19 +31,17 @@ std::string truncateLabel(const char* text, float max_width) {
 void applyVelocityChange(App& app, int trackIndex, const std::vector<midi::Note>& notes,
                          int newVelocity, uint32_t clickTick) {
     std::vector<size_t> indices;
-    std::vector<int> oldVelocities;
     std::vector<int> newVelocities;
     for (size_t i = 0; i < notes.size(); ++i) {
         const auto& note = notes[i];
         if (note.selected || (clickTick >= note.start_tick && clickTick < note.endTick())) {
             indices.push_back(i);
-            oldVelocities.push_back(note.velocity);
             newVelocities.push_back(newVelocity);
         }
     }
     if (indices.empty()) return;
     app.executeCommand(std::make_unique<ChangeVelocityCommand>(
-        app, trackIndex, std::move(indices), std::move(oldVelocities), std::move(newVelocities)));
+        app, trackIndex, std::move(indices), std::move(newVelocities)));
 }
 }
 
@@ -103,8 +102,9 @@ void PianoRoll::render() {
         IM_COL32(80, 80, 90, 255)
     );
 
-    // Velocity lane
     drawVelocityLane(drawList, velocityPos, velocitySize);
+    handleKeyboardPreview(keyboardPos, keyboardSize);
+    handleVelocityInput(velocityPos, velocitySize);
 
     if (mode_ == InteractionMode::SelectingBox) {
         drawSelectionBox(drawList, canvasPos);
@@ -235,11 +235,8 @@ void PianoRoll::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSi
     if (ticksPerBar <= 0) ticksPerBar = ppq * 4;
     if (ticksPerBeat <= 0) ticksPerBeat = ppq;
 
-    // Determine grid resolution based on zoom
-    int gridTicks = ticksPerBeat; // Beat by default
-    if (pixelsPerTick_ > 0.3f) gridTicks = std::max(1, ticksPerBeat / 4);  // Sub-beats
-    else if (pixelsPerTick_ > 0.15f) gridTicks = std::max(1, ticksPerBeat / 2);
-    else if (pixelsPerTick_ < 0.05f) gridTicks = ticksPerBar;  // Bars only
+    int gridTicks = midi::gridSubdivisionTicks(
+        ppq, bu, app_.getGridSnap(), pixelsPerTick_, ticksPerBar, ticksPerBeat);
 
     uint32_t tick = (startTick / gridTicks) * gridTicks;
     while (tick <= endTick) {
@@ -345,61 +342,22 @@ void PianoRoll::drawKeyboard(ImDrawList* drawList, ImVec2 pos, ImVec2 size) {
         IM_COL32(80, 80, 90, 255)
     );
 
-    // Handle keyboard clicks for preview
-    ImVec2 mousePos = ImGui::GetMousePos();
-    if (mousePos.x >= pos.x && mousePos.x < pos.x + KEYBOARD_WIDTH &&
-        mousePos.y >= pos.y && mousePos.y < pos.y + size.y) {
-
-        ImVec2 canvasPosForY = ImVec2(pos.x + KEYBOARD_WIDTH, pos.y);
-        int pitch = yToPitch(mousePos.y, canvasPosForY, ImVec2(size.x - KEYBOARD_WIDTH, size.y));
-
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            previewingPitch_ = pitch;
-            auto* track = app_.getSelectedTrack();
-            if (track) {
-                player_.previewNoteOn(track->channel, pitch, 100);
-            }
-        }
-    }
-    // Note: preview note-off is handled in render() so it always fires
 }
 
-// Get a unique color for each track
 static ImU32 getTrackColor(int trackIndex, int velocity, bool isSelected, bool isActiveTrack) {
-    static const float hues[] = {0.6f, 0.0f, 0.3f, 0.15f, 0.45f, 0.75f, 0.9f, 0.55f};
-    float hue = hues[trackIndex % 8];
+    auto rgb = midi::trackColorRgb(trackIndex, velocity, isSelected, isActiveTrack);
+    return IM_COL32(rgb.r, rgb.g, rgb.b, 255);
+}
 
-    float saturation = isActiveTrack ? 0.7f : 0.4f;
-    float value = 0.5f + (velocity / 127.0f) * 0.4f;
-
-    if (isSelected) {
-        return IM_COL32(255, 200, 100, 255);
-    }
-
-    if (!isActiveTrack) {
-        value *= 0.6f;
-        saturation *= 0.7f;
-    }
-
-    // HSV to RGB conversion
-    float h = hue * 6.0f;
-    int i = static_cast<int>(h);
-    float f = h - i;
-    float p = value * (1.0f - saturation);
-    float q = value * (1.0f - saturation * f);
-    float t = value * (1.0f - saturation * (1.0f - f));
-
-    float r, g, b;
-    switch (i % 6) {
-        case 0: r = value; g = t; b = p; break;
-        case 1: r = q; g = value; b = p; break;
-        case 2: r = p; g = value; b = t; break;
-        case 3: r = p; g = q; b = value; break;
-        case 4: r = t; g = p; b = value; break;
-        default: r = value; g = p; b = q; break;
-    }
-
-    return IM_COL32(static_cast<int>(r * 255), static_cast<int>(g * 255), static_cast<int>(b * 255), 255);
+midi::PianoRollView PianoRoll::viewState(ImVec2 canvasPos) const {
+    midi::PianoRollView view;
+    view.pixels_per_tick = pixelsPerTick_;
+    view.note_height = noteHeight_;
+    view.drum_row_height = drumRowHeight_;
+    view.scroll_x = scrollX_;
+    view.scroll_y = scrollY_;
+    view.use_drum_map = useDrumMap();
+    return view;
 }
 
 void PianoRoll::drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize) {
@@ -561,32 +519,50 @@ void PianoRoll::drawVelocityLane(ImDrawList* drawList, ImVec2 pos, ImVec2 size) 
     }
 
     drawList->PopClipRect();
+}
 
-    // Handle velocity editing via click-drag in velocity lane
+void PianoRoll::handleKeyboardPreview(ImVec2 pos, ImVec2 size) {
     ImVec2 mousePos = ImGui::GetMousePos();
-    if (mousePos.x >= pos.x && mousePos.x <= pos.x + size.x &&
-        mousePos.y >= pos.y && mousePos.y <= pos.y + size.y) {
+    if (mousePos.x < pos.x || mousePos.x >= pos.x + KEYBOARD_WIDTH ||
+        mousePos.y < pos.y || mousePos.y >= pos.y + size.y) {
+        return;
+    }
 
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            app_.beginUndoGroup();
-            mode_ = InteractionMode::EditingVelocity;
+    ImVec2 canvasPosForY = ImVec2(pos.x + KEYBOARD_WIDTH, pos.y);
+    int pitch = yToPitch(mousePos.y, canvasPosForY, ImVec2(size.x - KEYBOARD_WIDTH, size.y));
+    if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left)) return;
+
+    previewingPitch_ = pitch;
+    auto* track = app_.getSelectedTrack();
+    if (track) player_.previewNoteOn(track->channel, pitch, 100);
+}
+
+void PianoRoll::handleVelocityInput(ImVec2 pos, ImVec2 size) {
+    ImVec2 mousePos = ImGui::GetMousePos();
+    if (mousePos.x < pos.x || mousePos.x > pos.x + size.x ||
+        mousePos.y < pos.y || mousePos.y > pos.y + size.y) {
+        return;
+    }
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        app_.beginUndoGroup();
+        mode_ = InteractionMode::EditingVelocity;
+    }
+
+    if (mode_ != InteractionMode::EditingVelocity) return;
+
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        float relY = 1.0f - (mousePos.y - pos.y) / size.y;
+        int newVelocity = std::clamp(static_cast<int>(relY * 127), 1, 127);
+        uint32_t clickTick = xToTick(mousePos.x, pos, size);
+        if (auto* track = app_.getSelectedTrack()) {
+            applyVelocityChange(app_, app_.getSelectedTrackIndex(), track->notes, newVelocity, clickTick);
         }
     }
 
-    if (mode_ == InteractionMode::EditingVelocity) {
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            float relY = 1.0f - (mousePos.y - pos.y) / size.y;
-            int newVelocity = std::clamp(static_cast<int>(relY * 127), 1, 127);
-            uint32_t clickTick = xToTick(mousePos.x, pos, size);
-            if (auto* track = app_.getSelectedTrack()) {
-                applyVelocityChange(app_, app_.getSelectedTrackIndex(), track->notes, newVelocity, clickTick);
-            }
-        }
-
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            app_.endUndoGroup();
-            mode_ = InteractionMode::None;
-        }
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        app_.endUndoGroup();
+        mode_ = InteractionMode::None;
     }
 }
 
@@ -824,13 +800,7 @@ void PianoRoll::handleNoteDragging(ImVec2 canvasPos, ImVec2 canvasSize) {
 
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (hasDragged_ && (pitchDelta != 0 || tickDelta != 0)) {
-            if (auto* track = app_.getSelectedTrack()) {
-                auto indices = selectedNoteIndices(*track);
-                if (!indices.empty()) {
-                    app_.executeCommand(std::make_unique<MoveNotesCommand>(
-                        app_, app_.getSelectedTrackIndex(), indices, pitchDelta, tickDelta));
-                }
-            }
+            app_.moveSelectedNotes(pitchDelta, tickDelta);
         }
 
         mode_ = InteractionMode::None;
@@ -846,42 +816,8 @@ void PianoRoll::handleNoteResizing(ImVec2 canvasPos, ImVec2 canvasSize) {
     int32_t tickDelta = static_cast<int32_t>(currentTick) - static_cast<int32_t>(xToTick(dragStartMouse_.x, canvasPos, canvasSize));
 
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        auto* track = app_.getSelectedTrack();
-        if (track && tickDelta != 0) {
-            auto indices = selectedNoteIndices(*track);
-            if (!indices.empty()) {
-                if (resizingFromRight_) {
-                    std::vector<uint32_t> oldDurations;
-                    std::vector<uint32_t> newDurations;
-                    for (size_t index : indices) {
-                        oldDurations.push_back(track->notes[index].duration);
-                        int32_t newDuration = static_cast<int32_t>(track->notes[index].duration) + tickDelta;
-                        newDurations.push_back(static_cast<uint32_t>(std::max(1, newDuration)));
-                    }
-                    app_.executeCommand(std::make_unique<ResizeNotesCommand>(
-                        app_, app_.getSelectedTrackIndex(), indices, oldDurations, newDurations));
-                } else {
-                    std::vector<uint32_t> oldDurations;
-                    std::vector<uint32_t> newDurations;
-                    for (size_t index : indices) {
-                        const auto& note = track->notes[index];
-                        oldDurations.push_back(note.duration);
-                        int32_t newStart = static_cast<int32_t>(note.start_tick) + tickDelta;
-                        int32_t newDuration = static_cast<int32_t>(note.duration) - tickDelta;
-                        if (newDuration > 0 && newStart >= 0) {
-                            newDurations.push_back(static_cast<uint32_t>(newDuration));
-                        } else {
-                            newDurations.push_back(note.duration);
-                        }
-                    }
-                    app_.beginUndoGroup();
-                    app_.executeCommand(std::make_unique<MoveNotesCommand>(
-                        app_, app_.getSelectedTrackIndex(), indices, 0, tickDelta));
-                    app_.executeCommand(std::make_unique<ResizeNotesCommand>(
-                        app_, app_.getSelectedTrackIndex(), indices, oldDurations, newDurations));
-                    app_.endUndoGroup();
-                }
-            }
+        if (tickDelta != 0) {
+            app_.resizeSelectedNotes(tickDelta, resizingFromRight_);
         }
 
         mode_ = InteractionMode::None;
@@ -969,66 +905,32 @@ void PianoRoll::autoFollowPlayhead(ImVec2 canvasPos, ImVec2 canvasSize) {
     scrollX_ = std::max(0.0f, scrollX_);
 }
 
-float PianoRoll::tickToX(uint32_t tick, ImVec2 canvasPos, ImVec2 canvasSize) const {
-    return canvasPos.x + (tick - scrollX_) * pixelsPerTick_;
+float PianoRoll::tickToX(uint32_t tick, ImVec2 canvasPos, ImVec2) const {
+    return midi::tickToX(tick, canvasPos.x, viewState(canvasPos));
 }
 
-uint32_t PianoRoll::xToTick(float x, ImVec2 canvasPos, ImVec2 canvasSize) const {
-    float tick = scrollX_ + (x - canvasPos.x) / pixelsPerTick_;
-    return static_cast<uint32_t>(std::max(0.0f, tick));
+uint32_t PianoRoll::xToTick(float x, ImVec2 canvasPos, ImVec2) const {
+    return midi::xToTick(x, canvasPos.x, viewState(canvasPos));
 }
 
-float PianoRoll::pitchToY(int pitch, ImVec2 canvasPos, ImVec2 canvasSize) const {
-    if (useDrumMap()) {
-        return midi::drumPitchToY(pitch, canvasPos.y, drumRowHeight_, scrollY_);
-    }
-    return canvasPos.y + (127 - pitch) * noteHeight_ - scrollY_;
+float PianoRoll::pitchToY(int pitch, ImVec2 canvasPos, ImVec2) const {
+    return midi::pitchToY(pitch, canvasPos.y, viewState(canvasPos));
 }
 
-int PianoRoll::yToPitch(float y, ImVec2 canvasPos, ImVec2 canvasSize) const {
-    if (useDrumMap()) {
-        return midi::drumYToPitch(y, canvasPos.y, drumRowHeight_, scrollY_);
-    }
-    int pitch = 127 - static_cast<int>((y - canvasPos.y + scrollY_) / noteHeight_);
-    return std::clamp(pitch, 0, 127);
+int PianoRoll::yToPitch(float y, ImVec2 canvasPos, ImVec2) const {
+    return midi::yToPitch(y, canvasPos.y, viewState(canvasPos));
 }
 
 PianoRoll::NoteHit PianoRoll::hitTestNote(ImVec2 mousePos, ImVec2 canvasPos, ImVec2 canvasSize) {
     NoteHit result;
-
     auto* track = app_.getSelectedTrack();
     if (!track) return result;
 
-    const float edgeThreshold = 6.0f;
-
-    for (int i = static_cast<int>(track->notes.size()) - 1; i >= 0; --i) {
-        const auto& note = track->notes[i];
-
-        float x1 = tickToX(note.start_tick, canvasPos, canvasSize);
-        float x2 = tickToX(note.endTick(), canvasPos, canvasSize);
-        float y = pitchToY(note.pitch, canvasPos, canvasSize);
-
-        if (mousePos.x >= x1 && mousePos.x <= x2 &&
-            mousePos.y >= y && mousePos.y <= y + rowHeight()) {
-
-            result.noteIndex = i;
-
-            // Only report edge hits if the note is wide enough to have a
-            // distinct middle region; otherwise the entire note would be
-            // treated as an edge, making it impossible to select/move.
-            // We ran into this when loading loading the ff6 theme and being
-            // unable to remove a note.
-            float noteWidth = x2 - x1;
-            if (noteWidth > edgeThreshold * 3.0f) {
-                result.onLeftEdge = (mousePos.x - x1 < edgeThreshold);
-                result.onRightEdge = (x2 - mousePos.x < edgeThreshold);
-            }
-            // else: both stay false → click selects/moves the note
-
-            if (note.selected) return result;
-        }
-    }
-
+    auto hit = midi::hitTestNote(*track, mousePos.x, mousePos.y, canvasPos.x, canvasPos.y,
+                                 viewState(canvasPos), 6.0f);
+    result.noteIndex = hit.note_index;
+    result.onLeftEdge = hit.on_left_edge;
+    result.onRightEdge = hit.on_right_edge;
     return result;
 }
 
@@ -1050,9 +952,5 @@ float PianoRoll::rowHeight() const {
 }
 
 void PianoRoll::focusDrumMap(ImVec2 canvasPos, ImVec2 canvasSize) {
-    const int focus_pitch = 39;
-    float y = midi::drumPitchToY(focus_pitch, canvasPos.y, drumRowHeight_, 0.0f);
-    scrollY_ = y - canvasPos.y - canvasSize.y * 0.5f + drumRowHeight_ * 0.5f;
-    float maxScrollY = static_cast<float>(midi::DRUM_PITCH_COUNT) * drumRowHeight_ - canvasSize.y;
-    scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, maxScrollY));
+    midi::focusDrumMap(canvasPos.y, canvasSize.y, scrollY_, drumRowHeight_);
 }

@@ -2,6 +2,7 @@
 
 #include "../app.h"
 #include "../midi/midi_player.h"
+#include "../midi/piano_roll_view.h"
 #include "touch_input.h"
 #include <imgui.h>
 
@@ -12,6 +13,12 @@ public:
     PianoRollMobile(App& app, midi::MidiPlayer& player);
     void render(float width, float height);
     void processGesture(const TouchGesture& gesture);
+    bool inPianoRollArea(const TouchGesture& gesture) const;
+    void handleTapGesture(const TouchGesture& gesture);
+    void handleLongPressGesture(const TouchGesture& gesture);
+    void handleDragGesture(const TouchGesture& gesture);
+    void handlePinchGesture(const TouchGesture& gesture);
+    midi::PianoRollView viewState() const;
     void setScrollMode(bool enabled) { scrollMode_ = enabled; }
     bool isScrollMode() const { return scrollMode_; }
     void setTheme(const NineSliceTheme* theme) { theme_ = theme; }

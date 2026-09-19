@@ -2,6 +2,7 @@
 #include "../midi/harmony.h"
 #include "../midi/patterns.h"
 #include "nine_slice.h"
+#include "../midi/piano_roll_view.h"
 #include "../midi/types.h"
 #include <algorithm>
 #include <cmath>
@@ -83,19 +84,37 @@ void PianoRollMobile::render(float width, float height) {
     }
 }
 
-void PianoRollMobile::processGesture(const TouchGesture& gesture) {
-    // Check if the gesture is within the piano roll area (keyboard + grid).
-    // This prevents toolbar taps and other out-of-bounds touches from
-    // being processed as piano roll interactions.
-    float areaLeft = canvasPos_.x - KEYBOARD_WIDTH;
-    float areaRight = canvasPos_.x + canvasSize_.x;
-    float areaTop = canvasPos_.y;
-    float areaBottom = canvasPos_.y + canvasSize_.y;
-    bool inPianoRollArea = (gesture.x >= areaLeft && gesture.x <= areaRight &&
-                            gesture.y >= areaTop && gesture.y <= areaBottom);
+midi::PianoRollView PianoRollMobile::viewState() const {
+    midi::PianoRollView view;
+    view.pixels_per_tick = pixelsPerTick_;
+    view.note_height = noteHeight_;
+    view.drum_row_height = drumRowHeight_;
+    view.scroll_x = scrollX_;
+    view.scroll_y = scrollY_;
+    view.use_drum_map = useDrumMap();
+    return view;
+}
 
+bool PianoRollMobile::inPianoRollArea(const TouchGesture& gesture) const {
+    float area_left = canvasPos_.x - KEYBOARD_WIDTH;
+    float area_right = canvasPos_.x + canvasSize_.x;
+    float area_top = canvasPos_.y - RULER_HEIGHT;
+    float area_bottom = canvasPos_.y + canvasSize_.y;
+    return gesture.x >= area_left && gesture.x <= area_right &&
+           gesture.y >= area_top && gesture.y <= area_bottom;
+}
+
+void PianoRollMobile::processGesture(const TouchGesture& gesture) {
     switch (gesture.type) {
-        case GestureType::Tap: {
+        case GestureType::Tap: handleTapGesture(gesture); break;
+        case GestureType::LongPress: handleLongPressGesture(gesture); break;
+        case GestureType::Drag: handleDragGesture(gesture); break;
+        case GestureType::Pinch: handlePinchGesture(gesture); break;
+        default: break;
+    }
+}
+
+void PianoRollMobile::handleTapGesture(const TouchGesture& gesture) {
             // Stop any currently previewing note first
             if (previewingPitch_ >= 0) {
                 player_.previewNoteOff(previewingChannel_, previewingPitch_);
@@ -103,8 +122,15 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                 previewNoteOffTimer_ = 0;
             }
 
-            // Ignore taps outside the piano roll area
-            if (!inPianoRollArea) break;
+            if (!inPianoRollArea(gesture)) return;
+
+            float ruler_top = canvasPos_.y - RULER_HEIGHT;
+            if (gesture.y >= ruler_top && gesture.y < canvasPos_.y &&
+                gesture.x >= canvasPos_.x) {
+                uint32_t tick = xToTick(gesture.x, canvasPos_);
+                app_.setPlayheadTick(tick);
+                return;
+            }
 
             // Check if tap is on the keyboard (left of grid)
             float keyboardLeft = canvasPos_.x - KEYBOARD_WIDTH;
@@ -118,11 +144,11 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                     player_.previewNoteOn(track->channel, pitch, 100);
                     previewNoteOffTimer_ = 0.3f;  // Auto note-off after 300ms
                 }
-                break;
+                return;
             }
 
             // In scroll mode, ignore taps on the grid (no note creation/selection)
-            if (scrollMode_) break;
+            if (scrollMode_) return;
 
             // Single tap on grid: if on a note, select it; if on empty space, create a note
             auto hit = hitTestNote(gesture.x, gesture.y, canvasPos_, canvasSize_);
@@ -169,12 +195,10 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                     previewNoteOffTimer_ = 0.2f;  // Auto note-off after 200ms
                 }
             }
-            break;
-        }
+}
 
-        case GestureType::LongPress: {
-            // Ignore long presses outside the piano roll area or in scroll mode
-            if (!inPianoRollArea || scrollMode_) break;
+void PianoRollMobile::handleLongPressGesture(const TouchGesture& gesture) {
+            if (!inPianoRollArea(gesture) || scrollMode_) return;
 
             // Long press on note: start resizing
             auto hit = hitTestNote(gesture.x, gesture.y, canvasPos_, canvasSize_);
@@ -194,10 +218,9 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                 // We may need different UX for this.
                 app_.deleteSelectedNotes();
             }
-            break;
-        }
+}
 
-        case GestureType::Drag: {
+void PianoRollMobile::handleDragGesture(const TouchGesture& gesture) {
             if (gesture.fingerCount == 1) {
                 if (mode_ == InteractionMode::MovingNotes) {
                     // Continue moving selected notes
@@ -219,15 +242,8 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                             if (gridSize > 0) tickDelta = (tickDelta / gridSize) * gridSize;
                         }
 
-                        if (track && (pitchDelta != 0 || tickDelta != 0)) {
-                            std::vector<size_t> indices;
-                            for (size_t i = 0; i < track->notes.size(); ++i) {
-                                if (track->notes[i].selected) indices.push_back(i);
-                            }
-                            if (!indices.empty()) {
-                                app_.executeCommand(std::make_unique<MoveNotesCommand>(
-                                    app_, app_.getSelectedTrackIndex(), indices, pitchDelta, tickDelta));
-                            }
+                        if (pitchDelta != 0 || tickDelta != 0) {
+                            app_.moveSelectedNotes(pitchDelta, tickDelta);
                         }
                         mode_ = InteractionMode::None;
                     }
@@ -245,37 +261,8 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                             currentTick = midi::snapToGrid(currentTick, app_.getProject().ticks_per_quarter, app_.getGridSnap());
                             uint32_t startTick = xToTick(dragStartX_, canvasPos_);
                             int32_t tickDelta = static_cast<int32_t>(currentTick) - static_cast<int32_t>(startTick);
-
-                            if (resizingFromRight_) {
-                                std::vector<uint32_t> oldDurations;
-                                std::vector<uint32_t> newDurations;
-                                for (size_t index : indices) {
-                                    oldDurations.push_back(track->notes[index].duration);
-                                    int32_t newDuration = static_cast<int32_t>(track->notes[index].duration) + tickDelta;
-                                    newDurations.push_back(static_cast<uint32_t>(std::max(1, newDuration)));
-                                }
-                                app_.executeCommand(std::make_unique<ResizeNotesCommand>(
-                                    app_, app_.getSelectedTrackIndex(), indices, oldDurations, newDurations));
-                            } else {
-                                std::vector<uint32_t> oldDurations;
-                                std::vector<uint32_t> newDurations;
-                                for (size_t index : indices) {
-                                    const auto& note = track->notes[index];
-                                    oldDurations.push_back(note.duration);
-                                    uint32_t endTick = note.start_tick + note.duration;
-                                    int32_t newStart = static_cast<int32_t>(note.start_tick) + tickDelta;
-                                    newStart = std::max(0, newStart);
-                                    if (static_cast<uint32_t>(newStart) >= endTick) {
-                                        newStart = static_cast<int32_t>(endTick) - 1;
-                                    }
-                                    newDurations.push_back(endTick - static_cast<uint32_t>(newStart));
-                                }
-                                app_.beginUndoGroup();
-                                app_.executeCommand(std::make_unique<MoveNotesCommand>(
-                                    app_, app_.getSelectedTrackIndex(), indices, 0, tickDelta));
-                                app_.executeCommand(std::make_unique<ResizeNotesCommand>(
-                                    app_, app_.getSelectedTrackIndex(), indices, oldDurations, newDurations));
-                                app_.endUndoGroup();
+                            if (tickDelta != 0) {
+                                app_.resizeSelectedNotes(tickDelta, resizingFromRight_);
                             }
                         }
                         mode_ = InteractionMode::None;
@@ -296,17 +283,16 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                     }
 
                 } else if (mode_ == InteractionMode::None) {
-                    // Ignore drags that start outside the piano roll area
                     float startX = gesture.x - gesture.deltaX;
                     float startY = gesture.y - gesture.deltaY;
-                    bool startInArea = (startX >= areaLeft && startX <= areaRight &&
-                                        startY >= areaTop && startY <= areaBottom);
-                    if (!startInArea) break;
+                    TouchGesture start_gesture = gesture;
+                    start_gesture.x = startX;
+                    start_gesture.y = startY;
+                    if (!inPianoRollArea(start_gesture)) return;
 
-                    // In scroll mode, all one-finger drags become scrolling
                     if (scrollMode_) {
                         mode_ = InteractionMode::Scrolling;
-                        break;
+                        return;
                     }
 
                     // Edit mode: check if drag starts on a note
@@ -347,10 +333,9 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                     }
                 }
             }
-            break;
-        }
+}
 
-        case GestureType::Pinch: {
+void PianoRollMobile::handlePinchGesture(const TouchGesture& gesture) {
             if (gesture.began) {
                 // Start pinch-to-zoom
             } else if (gesture.active) {
@@ -386,12 +371,6 @@ void PianoRollMobile::processGesture(const TouchGesture& gesture) {
                 ? static_cast<float>(midi::DRUM_PITCH_COUNT) * drumRowHeight_ - canvasSize_.y
                 : 127.0f * noteHeight_ - canvasSize_.y;
             scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, maxScrollY));
-            break;
-        }
-
-        default:
-            break;
-    }
 }
 
 // ========== Drawing ==========
@@ -507,10 +486,8 @@ void PianoRollMobile::drawGrid(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 ca
     if (ticksPerBar <= 0) ticksPerBar = ppq * 4;
     if (ticksPerBeat <= 0) ticksPerBeat = ppq;
 
-    int gridTicks = ticksPerBeat;
-    if (pixelsPerTick_ > 0.4f) gridTicks = std::max(1, ticksPerBeat / 4);
-    else if (pixelsPerTick_ > 0.2f) gridTicks = std::max(1, ticksPerBeat / 2);
-    else if (pixelsPerTick_ < 0.08f) gridTicks = ticksPerBar;
+    int gridTicks = midi::gridSubdivisionTicks(
+        ppq, bu, app_.getGridSnap(), pixelsPerTick_, ticksPerBar, ticksPerBeat);
 
     uint32_t tick = (startTick / gridTicks) * gridTicks;
     while (tick <= endTick) {
@@ -588,37 +565,8 @@ void PianoRollMobile::drawKeyboard(ImDrawList* drawList, ImVec2 pos, ImVec2 size
 }
 
 ImU32 PianoRollMobile::getTrackColor(int trackIndex, int velocity, bool isSelected, bool isActiveTrack) {
-    static const float hues[] = {0.6f, 0.0f, 0.3f, 0.15f, 0.45f, 0.75f, 0.9f, 0.55f};
-    float hue = hues[trackIndex % 8];
-
-    float saturation = isActiveTrack ? 0.7f : 0.4f;
-    float value = 0.5f + (velocity / 127.0f) * 0.4f;
-
-    if (isSelected) return IM_COL32(255, 200, 100, 255);
-
-    if (!isActiveTrack) {
-        value *= 0.6f;
-        saturation *= 0.7f;
-    }
-
-    float h = hue * 6.0f;
-    int i = static_cast<int>(h);
-    float f = h - i;
-    float p = value * (1.0f - saturation);
-    float q = value * (1.0f - saturation * f);
-    float t = value * (1.0f - saturation * (1.0f - f));
-
-    float r, g, b;
-    switch (i % 6) {
-        case 0: r = value; g = t; b = p; break;
-        case 1: r = q; g = value; b = p; break;
-        case 2: r = p; g = value; b = t; break;
-        case 3: r = p; g = q; b = value; break;
-        case 4: r = t; g = p; b = value; break;
-        default: r = value; g = p; b = q; break;
-    }
-
-    return IM_COL32(static_cast<int>(r * 255), static_cast<int>(g * 255), static_cast<int>(b * 255), 255);
+    auto rgb = midi::trackColorRgb(trackIndex, velocity, isSelected, isActiveTrack);
+    return IM_COL32(rgb.r, rgb.g, rgb.b, 255);
 }
 
 void PianoRollMobile::drawNotes(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize) {
@@ -764,27 +712,19 @@ void PianoRollMobile::autoFollowPlayhead(ImVec2 canvasPos, ImVec2 canvasSize) {
 // ========== Coordinate Conversion ==========
 
 float PianoRollMobile::tickToX(uint32_t tick, ImVec2 canvasPos) const {
-    return canvasPos.x + (tick - scrollX_) * pixelsPerTick_;
+    return midi::tickToX(tick, canvasPos.x, viewState());
 }
 
 uint32_t PianoRollMobile::xToTick(float x, ImVec2 canvasPos) const {
-    float tick = scrollX_ + (x - canvasPos.x) / pixelsPerTick_;
-    return static_cast<uint32_t>(std::max(0.0f, tick));
+    return midi::xToTick(x, canvasPos.x, viewState());
 }
 
 float PianoRollMobile::pitchToY(int pitch, ImVec2 canvasPos) const {
-    if (useDrumMap()) {
-        return midi::drumPitchToY(pitch, canvasPos.y, drumRowHeight_, scrollY_);
-    }
-    return canvasPos.y + (127 - pitch) * noteHeight_ - scrollY_;
+    return midi::pitchToY(pitch, canvasPos.y, viewState());
 }
 
 int PianoRollMobile::yToPitch(float y, ImVec2 canvasPos) const {
-    if (useDrumMap()) {
-        return midi::drumYToPitch(y, canvasPos.y, drumRowHeight_, scrollY_);
-    }
-    int pitch = 127 - static_cast<int>((y - canvasPos.y + scrollY_) / noteHeight_);
-    return std::clamp(pitch, 0, 127);
+    return midi::yToPitch(y, canvasPos.y, viewState());
 }
 
 PianoRollMobile::NoteHit PianoRollMobile::hitTestNote(float touchX, float touchY,
@@ -793,31 +733,11 @@ PianoRollMobile::NoteHit PianoRollMobile::hitTestNote(float touchX, float touchY
     auto* track = app_.getSelectedTrack();
     if (!track) return result;
 
-    // Larger touch target for mobile (12px padding)
-    const float touchPadding = 12.0f;
-
-    for (int i = static_cast<int>(track->notes.size()) - 1; i >= 0; --i) {
-        const auto& note = track->notes[i];
-
-        float x1 = tickToX(note.start_tick, canvasPos);
-        float x2 = tickToX(note.endTick(), canvasPos);
-        float y = pitchToY(note.pitch, canvasPos);
-
-        if (touchX >= x1 - touchPadding && touchX <= x2 + touchPadding &&
-            touchY >= y - touchPadding && touchY <= y + rowHeight() + touchPadding) {
-
-            result.noteIndex = i;
-            // Edge detection for resizing (20px touch zone on each side)
-            float noteWidth = x2 - x1;
-            if (noteWidth > 40.0f) {
-                result.onRightEdge = (x2 - touchX < 20.0f);
-                result.onLeftEdge  = (touchX - x1 < 20.0f);
-            }
-
-            if (note.selected) return result;
-        }
-    }
-
+    auto hit = midi::hitTestNote(*track, touchX, touchY, canvasPos.x, canvasPos.y,
+                                 viewState(), 6.0f, 12.0f);
+    result.noteIndex = hit.note_index;
+    result.onLeftEdge = hit.on_left_edge;
+    result.onRightEdge = hit.on_right_edge;
     return result;
 }
 
@@ -831,9 +751,5 @@ float PianoRollMobile::rowHeight() const {
 }
 
 void PianoRollMobile::focusDrumMap(ImVec2 canvasPos, ImVec2 canvasSize) {
-    const int focus_pitch = 39;
-    float y = midi::drumPitchToY(focus_pitch, canvasPos.y, drumRowHeight_, 0.0f);
-    scrollY_ = y - canvasPos.y - canvasSize.y * 0.5f + drumRowHeight_ * 0.5f;
-    float maxScrollY = static_cast<float>(midi::DRUM_PITCH_COUNT) * drumRowHeight_ - canvasSize.y;
-    scrollY_ = std::clamp(scrollY_, 0.0f, std::max(0.0f, maxScrollY));
+    midi::focusDrumMap(canvasPos.y, canvasSize.y, scrollY_, drumRowHeight_);
 }

@@ -99,10 +99,10 @@ void TrackPanel::renderTrackItem(int index, midi::Track& track) {
                 for (int c = 0; c < 16; ++c) {
                     bool selected = (c == category);
                     if (ImGui::Selectable(std::string(midi::getCategoryName(c)).c_str(), selected)) {
-                        int oldProgram = track.program;
                         int newProgram = c * 8;
                         app_.executeCommand(std::make_unique<ChangeInstrumentCommand>(
-                            app_, index, oldProgram, newProgram));
+                            app_, index, newProgram));
+                        player_.allNotesOffChannel(track.channel);
                         player_.sendProgramChange(track.channel, newProgram);
                     }
                 }
@@ -116,9 +116,9 @@ void TrackPanel::renderTrackItem(int index, midi::Track& track) {
                     int prog = baseProgram + i;
                     bool selected = (prog == track.program);
                     if (ImGui::Selectable(std::string(midi::getInstrumentName(prog)).c_str(), selected)) {
-                        int oldProgram = track.program;
                         app_.executeCommand(std::make_unique<ChangeInstrumentCommand>(
-                            app_, index, oldProgram, prog));
+                            app_, index, prog));
+                        player_.allNotesOffChannel(track.channel);
                         player_.sendProgramChange(track.channel, prog);
                     }
                 }

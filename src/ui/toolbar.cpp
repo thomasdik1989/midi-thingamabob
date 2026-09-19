@@ -120,8 +120,6 @@ void Toolbar::render() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80);
 
-    // There is still something wrong here.
-    // Changing this value does not change the grid snap in the piano roll.
     static const char* gridNames[] = { "Off", "1", "1/2", "1/4", "1/8", "1/16", "1/32" };
     static const midi::GridSnap gridValues[] = {
         midi::GridSnap::None,
@@ -206,6 +204,11 @@ void Toolbar::render() {
     }
     ImGui::SameLine();
 
+    if (ImGui::Button("SoundFont")) {
+        showSoundFontPopup_ = true;
+    }
+    ImGui::SameLine();
+
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
     ImGui::SameLine();
 
@@ -228,15 +231,30 @@ void Toolbar::render() {
             player_.closeDevice();
         } else {
             if (player_.openDevice(deviceIndex - 1)) {
-                // Send program changes for all tracks
-                for (const auto& track : project.tracks) {
-                    player_.sendProgramChange(track.channel, track.program);
-                }
+                player_.syncTrackPrograms(project);
             }
         }
     }
 
     ImGui::PopStyleVar();
+
+    if (showSoundFontPopup_) {
+        ImGui::OpenPopup("Load SoundFont");
+        showSoundFontPopup_ = false;
+    }
+    if (ImGui::BeginPopupModal("Load SoundFont", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::SetNextItemWidth(360);
+        ImGui::InputText("Path", soundFontPath_, sizeof(soundFontPath_));
+        if (ImGui::Button("Load", ImVec2(120, 0))) {
+            player_.loadSoundFont(soundFontPath_, &project);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 
     ImGui::End();
 }

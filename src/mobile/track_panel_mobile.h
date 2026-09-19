@@ -42,10 +42,12 @@ private:
     static constexpr float DELETE_BUTTON_WIDTH = 80.0f;
     static constexpr float SWIPE_THRESHOLD = -60.0f; // Pixels to reveal delete button
 
-    // Track card Y positions (for gesture hit testing)
+    // Track card screen bounds (for gesture hit testing)
     struct CardBounds {
-        float y;
-        float height;
+        float x = 0.0f;
+        float y = 0.0f;
+        float width = 0.0f;
+        float height = 0.0f;
     };
     std::vector<CardBounds> cardBounds_;
 };

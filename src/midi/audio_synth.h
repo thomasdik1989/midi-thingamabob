@@ -27,9 +27,11 @@ public:
     void noteOn(int channel, int pitch, int velocity);
     void noteOff(int channel, int pitch);
     void allNotesOff();
+    void allNotesOffChannel(int channel);
     
     // Program change
     void programChange(int channel, int program);
+    int getChannelProgram(int channel) const;
     
     void controlChange(int channel, int controller, int value);
     void pitchBend(int channel, int value);

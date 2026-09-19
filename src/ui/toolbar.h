@@ -17,4 +17,6 @@ private:
     int selectedMidiDevice_ = -1;
     bool showSongLengthPopup_ = false;
     int songLengthDraft_ = 32;
+    bool showSoundFontPopup_ = false;
+    char soundFontPath_[512] = {};
 };

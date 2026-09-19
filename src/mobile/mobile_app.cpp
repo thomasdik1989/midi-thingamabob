@@ -1,5 +1,4 @@
 #include "mobile_app.h"
-#include "file_ops_mobile.h"
 #include <imgui.h>
 #include <SDL.h>
 
@@ -145,10 +144,11 @@ void MobileApp::render(float displayWidth, float displayHeight) {
     }
 
     toolbar_.setFileSafety(&fileSafety_);
+    toolbar_.setFileOps(&fileOps_);
+    settings_.setFileOps(&fileOps_);
     swipeNav_.render(displayWidth, displayHeight);
 
-    // Render file dialogs (modal popups on top)
-    FileOpsMobile::renderDialogs();
+    fileOps_.renderDialogs();
     renderFileSafetyMobile(fileSafety_, theme_.loaded() ? &theme_ : nullptr);
 }
 

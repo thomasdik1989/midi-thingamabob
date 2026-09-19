@@ -2,6 +2,7 @@
 
 #include "../app.h"
 #include "../midi/midi_player.h"
+#include "../midi/piano_roll_view.h"
 #include <imgui.h>
 
 class PianoRoll {
@@ -19,6 +20,8 @@ private:
     void drawLoopRegion(ImDrawList* drawList, ImVec2 canvasPos, ImVec2 canvasSize);
     void drawSelectionBox(ImDrawList* drawList, ImVec2 canvasPos);
     void drawVelocityLane(ImDrawList* drawList, ImVec2 pos, ImVec2 size);
+    void handleKeyboardPreview(ImVec2 pos, ImVec2 size);
+    void handleVelocityInput(ImVec2 pos, ImVec2 size);
     
     // Interaction
     void handleInput(ImVec2 canvasPos, ImVec2 canvasSize);
@@ -99,6 +102,5 @@ private:
     // Keyboard interaction
     int previewingPitch_ = -1;
     
-    // Velocity editing
-    int velocityEditNoteIndex_ = -1;
+    midi::PianoRollView viewState(ImVec2 canvasPos) const;
 };

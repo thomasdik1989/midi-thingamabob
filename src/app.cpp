@@ -311,27 +311,15 @@ bool App::canRedo() const {
 }
 
 namespace {
-class QuantizeNotesCommand final : public Command {
-public:
-    QuantizeNotesCommand(App& app, int trackIndex, int ticksPerQuarter, midi::GridSnap snap)
-        : app_(app), trackIndex_(trackIndex), ticksPerQuarter_(ticksPerQuarter), snap_(snap) {}
-    void execute() override {
-        auto& tracks = app_.getProject().tracks;
-        if (trackIndex_ < 0 || trackIndex_ >= static_cast<int>(tracks.size())) return;
-        for (auto& note : tracks[trackIndex_].notes) {
-            if (note.selected) {
-                note.start_tick = midi::snapToGrid(note.start_tick, ticksPerQuarter_, snap_);
-            }
-        }
-        tracks[trackIndex_].sortNotes();
+
+std::vector<size_t> selectedNoteIndices(const midi::Track& track) {
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < track.notes.size(); ++i) {
+        if (track.notes[i].selected) indices.push_back(i);
     }
-    std::string getName() const override { return "Quantize Notes"; }
-private:
-    App& app_;
-    int trackIndex_;
-    int ticksPerQuarter_;
-    midi::GridSnap snap_;
-};
+    return indices;
+}
+
 }
 
 void App::deleteSelectedNotes() {
@@ -405,6 +393,49 @@ void App::quantizeSelectedNotes() {
         *this, selectedTrack_, project_.ticks_per_quarter, gridSnap_));
 }
 
+void App::moveSelectedNotes(int pitchDelta, int32_t tickDelta) {
+    auto* track = getSelectedTrack();
+    if (!track || (pitchDelta == 0 && tickDelta == 0)) return;
+    auto indices = selectedNoteIndices(*track);
+    if (indices.empty()) return;
+    executeCommand(std::make_unique<MoveNotesCommand>(
+        *this, selectedTrack_, std::move(indices), pitchDelta, tickDelta));
+}
+
+void App::resizeSelectedNotes(int32_t tickDelta, bool fromRight) {
+    auto* track = getSelectedTrack();
+    if (!track || tickDelta == 0) return;
+    auto indices = selectedNoteIndices(*track);
+    if (indices.empty()) return;
+
+    if (fromRight) {
+        std::vector<uint32_t> newDurations;
+        for (size_t index : indices) {
+            int32_t newDuration = static_cast<int32_t>(track->notes[index].duration) + tickDelta;
+            newDurations.push_back(static_cast<uint32_t>(std::max(1, newDuration)));
+        }
+        executeCommand(std::make_unique<ResizeNotesCommand>(
+            *this, selectedTrack_, indices, std::move(newDurations)));
+        return;
+    }
+
+    std::vector<uint32_t> newDurations;
+    for (size_t index : indices) {
+        const auto& note = track->notes[index];
+        int32_t newDuration = static_cast<int32_t>(note.duration) - tickDelta;
+        if (newDuration > 0 && static_cast<int32_t>(note.start_tick) + tickDelta >= 0) {
+            newDurations.push_back(static_cast<uint32_t>(newDuration));
+        } else {
+            newDurations.push_back(note.duration);
+        }
+    }
+    beginUndoGroup();
+    executeCommand(std::make_unique<MoveNotesCommand>(*this, selectedTrack_, indices, 0, tickDelta));
+    executeCommand(std::make_unique<ResizeNotesCommand>(
+        *this, selectedTrack_, indices, std::move(newDurations)));
+    endUndoGroup();
+}
+
 // Command implementations
 
 AddNotesCommand::AddNotesCommand(App& app, int trackIndex, std::vector<midi::Note> notes)
@@ -425,10 +456,13 @@ DeleteNotesCommand::DeleteNotesCommand(App& app, int trackIndex, std::vector<mid
 
 void DeleteNotesCommand::execute() {
     auto& tracks = app_.getProject().tracks;
-    if (trackIndex_ >= 0 && trackIndex_ < static_cast<int>(tracks.size())) {
-        auto& notes = tracks[trackIndex_].notes;
-        notes.erase(std::remove_if(notes.begin(), notes.end(), [](const midi::Note& note) {
-            return note.selected;
+    if (trackIndex_ < 0 || trackIndex_ >= static_cast<int>(tracks.size())) return;
+
+    auto& notes = tracks[trackIndex_].notes;
+    for (const auto& target : notes_) {
+        notes.erase(std::remove_if(notes.begin(), notes.end(), [&](const midi::Note& note) {
+            return note.pitch == target.pitch && note.start_tick == target.start_tick &&
+                   note.duration == target.duration;
         }), notes.end());
     }
 }
@@ -454,9 +488,9 @@ void MoveNotesCommand::execute() {
 }
 
 ResizeNotesCommand::ResizeNotesCommand(App& app, int trackIndex, std::vector<size_t> noteIndices,
-                                       std::vector<uint32_t> oldDurations, std::vector<uint32_t> newDurations)
+                                       std::vector<uint32_t> newDurations)
     : app_(app), trackIndex_(trackIndex), noteIndices_(std::move(noteIndices)),
-      oldDurations_(std::move(oldDurations)), newDurations_(std::move(newDurations)) {}
+      newDurations_(std::move(newDurations)) {}
 
 void ResizeNotesCommand::execute() {
     auto& tracks = app_.getProject().tracks;
@@ -471,9 +505,9 @@ void ResizeNotesCommand::execute() {
 }
 
 ChangeVelocityCommand::ChangeVelocityCommand(App& app, int trackIndex, std::vector<size_t> noteIndices,
-                                             std::vector<int> oldVelocities, std::vector<int> newVelocities)
+                                             std::vector<int> newVelocities)
     : app_(app), trackIndex_(trackIndex), noteIndices_(std::move(noteIndices)),
-      oldVelocities_(std::move(oldVelocities)), newVelocities_(std::move(newVelocities)) {}
+      newVelocities_(std::move(newVelocities)) {}
 
 void ChangeVelocityCommand::execute() {
     auto& tracks = app_.getProject().tracks;
@@ -487,8 +521,22 @@ void ChangeVelocityCommand::execute() {
     }
 }
 
-ChangeInstrumentCommand::ChangeInstrumentCommand(App& app, int trackIndex, int oldProgram, int newProgram)
-    : app_(app), trackIndex_(trackIndex), oldProgram_(oldProgram), newProgram_(newProgram) {}
+ChangeInstrumentCommand::ChangeInstrumentCommand(App& app, int trackIndex, int newProgram)
+    : app_(app), trackIndex_(trackIndex), newProgram_(newProgram) {}
+
+QuantizeNotesCommand::QuantizeNotesCommand(App& app, int trackIndex, int ticksPerQuarter, midi::GridSnap snap)
+    : app_(app), trackIndex_(trackIndex), ticksPerQuarter_(ticksPerQuarter), snap_(snap) {}
+
+void QuantizeNotesCommand::execute() {
+    auto& tracks = app_.getProject().tracks;
+    if (trackIndex_ < 0 || trackIndex_ >= static_cast<int>(tracks.size())) return;
+    for (auto& note : tracks[trackIndex_].notes) {
+        if (note.selected) {
+            note.start_tick = midi::snapToGrid(note.start_tick, ticksPerQuarter_, snap_);
+        }
+    }
+    tracks[trackIndex_].sortNotes();
+}
 
 void ChangeInstrumentCommand::execute() {
     auto& tracks = app_.getProject().tracks;

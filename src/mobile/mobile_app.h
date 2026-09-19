@@ -11,6 +11,7 @@
 #include "nine_slice.h"
 #include "../file_safety.h"
 #include "file_safety_mobile.h"
+#include "file_ops_mobile.h"
 
 #include <SDL.h>
 #include <chrono>
@@ -31,6 +32,7 @@ private:
 
     App app_;
     FileSafety fileSafety_{app_};
+    FileOpsMobile fileOps_;
     bool closeApproved_ = false;
     midi::MidiPlayer midiPlayer_;
     TouchInput touchInput_;

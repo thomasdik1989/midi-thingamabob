@@ -133,9 +133,31 @@ void Project::clearAllSelections() {
 
 uint32_t snapToGrid(uint32_t tick, int ticks_per_quarter, GridSnap snap) {
     if (snap == GridSnap::None) return tick;
-    
-    int gridSize = std::max(1, ticks_per_quarter * 4 / static_cast<int>(snap));
+
+    int gridSize = gridSnapTicks(ticks_per_quarter, snap);
+    if (gridSize <= 0) return tick;
     return (tick / gridSize) * gridSize;
+}
+
+int gridSnapTicks(int ticks_per_quarter, GridSnap snap) {
+    if (snap == GridSnap::None) return 0;
+    return std::max(1, ticks_per_quarter * 4 / static_cast<int>(snap));
+}
+
+int gridSubdivisionTicks(int ticks_per_quarter, int beat_unit, GridSnap snap,
+                         float pixels_per_tick, int ticks_per_bar, int ticks_per_beat) {
+    int snap_ticks = gridSnapTicks(ticks_per_quarter, snap);
+    if (snap_ticks > 0) return snap_ticks;
+
+    int bu = beat_unit > 0 ? beat_unit : 4;
+    int ppq = ticks_per_quarter > 0 ? ticks_per_quarter : 480;
+    int ticks_per_beat_local = ticks_per_beat > 0 ? ticks_per_beat : ppq * 4 / bu;
+    int ticks_per_bar_local = ticks_per_bar > 0 ? ticks_per_bar : ppq * 4;
+
+    if (pixels_per_tick > 0.3f) return std::max(1, ticks_per_beat_local / 4);
+    if (pixels_per_tick > 0.15f) return std::max(1, ticks_per_beat_local / 2);
+    if (pixels_per_tick < 0.05f) return ticks_per_bar_local;
+    return ticks_per_beat_local;
 }
 
 std::string getNoteName(int pitch) {
@@ -153,11 +175,11 @@ std::string getTrackPitchLabel(int pitch, bool drum_track) {
     return getNoteName(pitch);
 }
 
-int rowToPitch(int row, int lowest_pitch) {
+int rowToPitch(int row, int) {
     return 127 - row; // Row 0 is highest pitch (127)
 }
 
-int pitchToRow(int pitch, int lowest_pitch) {
+int pitchToRow(int pitch, int) {
     return 127 - pitch;
 }
 

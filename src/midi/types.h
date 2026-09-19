@@ -118,6 +118,13 @@ enum class GridSnap {
 // Snap a tick value to the nearest grid position
 uint32_t snapToGrid(uint32_t tick, int ticks_per_quarter, GridSnap snap);
 
+// Tick spacing for one grid-snap division (0 when snap is None)
+int gridSnapTicks(int ticks_per_quarter, GridSnap snap);
+
+// Subdivision spacing for piano-roll vertical lines (snap when set, else zoom-based)
+int gridSubdivisionTicks(int ticks_per_quarter, int beat_unit, GridSnap snap,
+                           float pixels_per_tick, int ticks_per_bar, int ticks_per_beat);
+
 // Get the name of a MIDI note (e.g., "C4", "F#5")
 std::string getNoteName(int pitch);
 

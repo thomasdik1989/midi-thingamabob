@@ -20,13 +20,13 @@ endif()
 set(IMGUI_DIR ${CMAKE_CURRENT_LIST_DIR}/third_party/imgui)
 set(IMGUI_CORE_SOURCES
     ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
 )
 
-# midifile library
+# midifile library (skip CLI tools)
+set(BUILD_MIDILIBRARY_ONLY ON CACHE BOOL "" FORCE)
 add_subdirectory(third_party/midifile)
 
 # RtMidi
@@ -43,20 +43,31 @@ if(BUILD_MOBILE)
 endif()
 add_subdirectory(third_party/rtmidi)
 
-# Shared application core sources (used by both desktop and mobile)
+# Shared application core library (used by desktop, mobile, and tests)
 set(CORE_SOURCES
     src/app.cpp
     src/file_safety.cpp
+    src/file_browser.cpp
     src/midi/types.cpp
     src/midi/atomic_file.cpp
     src/midi/recovery.cpp
     src/midi/playback.cpp
     src/midi/patterns.cpp
     src/midi/harmony.cpp
+    src/midi/piano_roll_view.cpp
     src/midi/midi_file.cpp
     src/midi/midi_player.cpp
     src/midi/audio_synth.cpp
+    src/midi/synth_presets.cpp
 )
+
+add_library(MidiCore STATIC ${CORE_SOURCES})
+target_include_directories(MidiCore PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/third_party/midifile/include
+    ${CMAKE_CURRENT_LIST_DIR}/third_party/rtmidi
+)
+target_link_libraries(MidiCore PUBLIC midifile rtmidi)
 
 if(BUILD_MOBILE)
     # =========================================================================
@@ -126,7 +137,6 @@ if(BUILD_MOBILE)
         )
 
         add_executable(${MOBILE_TARGET} MACOSX_BUNDLE
-            ${CORE_SOURCES}
             ${MOBILE_SOURCES}
             ${IOS_SOURCES}
             ${ASSET_FILES}
@@ -143,6 +153,7 @@ if(BUILD_MOBILE)
         )
 
         target_link_libraries(${MOBILE_TARGET} PRIVATE
+            MidiCore
             imgui_mobile
             midifile
             rtmidi
@@ -168,7 +179,6 @@ if(BUILD_MOBILE)
     elseif(MOBILE_PLATFORM STREQUAL "Android")
         # Android build (NDK shared library)
         add_library(${MOBILE_TARGET} SHARED
-            ${CORE_SOURCES}
             ${MOBILE_SOURCES}
         )
 
@@ -178,6 +188,7 @@ if(BUILD_MOBILE)
         )
 
         target_link_libraries(${MOBILE_TARGET} PRIVATE
+            MidiCore
             imgui_mobile
             midifile
             rtmidi
@@ -194,7 +205,6 @@ if(BUILD_MOBILE)
         find_package(OpenGL REQUIRED)
 
         add_executable(${MOBILE_TARGET}
-            ${CORE_SOURCES}
             ${MOBILE_SOURCES}
         )
 
@@ -204,6 +214,7 @@ if(BUILD_MOBILE)
         )
 
         target_link_libraries(${MOBILE_TARGET} PRIVATE
+            MidiCore
             imgui_mobile
             midifile
             rtmidi
@@ -266,7 +277,6 @@ else()
     # Desktop application sources
     set(DESKTOP_SOURCES
         src/main.cpp
-        ${CORE_SOURCES}
         src/ui/file_safety.cpp
         src/ui/main_window.cpp
         src/ui/piano_roll.cpp
@@ -288,6 +298,7 @@ else()
     )
 
     target_link_libraries(${PROJECT_NAME} PRIVATE
+        MidiCore
         imgui
         midifile
         rtmidi
@@ -319,19 +330,13 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
-    add_executable(MidiCoreTests tests/core_tests.cpp src/app.cpp src/midi/types.cpp
-        src/midi/midi_file.cpp src/midi/atomic_file.cpp src/midi/recovery.cpp src/midi/playback.cpp
-        src/midi/patterns.cpp src/midi/harmony.cpp)
-    target_include_directories(MidiCoreTests PRIVATE src third_party/midifile/include)
-    target_link_libraries(MidiCoreTests PRIVATE midifile)
+    add_executable(MidiCoreTests tests/core_tests.cpp)
+    target_link_libraries(MidiCoreTests PRIVATE MidiCore)
     add_test(NAME MidiCoreTests COMMAND MidiCoreTests)
 endif()
 
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT BUILD_MOBILE)
-    add_executable(MidiFileSafetyTests tests/file_safety_tests.cpp src/file_safety.cpp
-        src/app.cpp src/midi/types.cpp src/midi/midi_file.cpp src/midi/atomic_file.cpp src/midi/recovery.cpp
-        src/midi/patterns.cpp src/midi/harmony.cpp)
-    target_include_directories(MidiFileSafetyTests PRIVATE src third_party/midifile/include)
-    target_link_libraries(MidiFileSafetyTests PRIVATE midifile)
+    add_executable(MidiFileSafetyTests tests/file_safety_tests.cpp)
+    target_link_libraries(MidiFileSafetyTests PRIVATE MidiCore)
     add_test(NAME MidiFileSafetyTests COMMAND MidiFileSafetyTests)
 endif()

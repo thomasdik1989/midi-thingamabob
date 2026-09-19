@@ -1,4 +1,6 @@
 #include "main_window.h"
+#include "../file_browser.h"
+#include <filesystem>
 #include "../midi/patterns.h"
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -53,7 +55,11 @@ void MainWindow::renderMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New", "Ctrl+N")) {
-                fileSafety_.request([this] { midiPlayer_.panic(); app_.newProject(); });
+                fileSafety_.request([this] {
+                    midiPlayer_.panic();
+                    app_.newProject();
+                    midiPlayer_.syncTrackPrograms(app_.getProject());
+                });
             }
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
                 showOpenDialog();
@@ -216,7 +222,11 @@ void MainWindow::handleKeyboardShortcuts() {
 
     // File operations
     if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_N)) {
-        fileSafety_.request([this] { midiPlayer_.panic(); app_.newProject(); });
+        fileSafety_.request([this] {
+            midiPlayer_.panic();
+            app_.newProject();
+            midiPlayer_.syncTrackPrograms(app_.getProject());
+        });
     }
     if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_O)) {
         showOpenDialog();
@@ -272,12 +282,14 @@ void MainWindow::showOpenDialog() {
         showOpenFileDialog_ = true;
         openErrorMessage_.clear();
         std::memset(filePathBuffer_, 0, sizeof(filePathBuffer_));
+        browseDirectory_ = defaultBrowseDirectory();
     });
 }
 
 void MainWindow::showSaveDialog() {
     showSaveFileDialog_ = true;
     std::strncpy(filePathBuffer_, app_.getProject().filepath.c_str(), sizeof(filePathBuffer_) - 1);
+    browseDirectory_ = defaultBrowseDirectory();
 }
 
 void MainWindow::handleFileDialogs() {
@@ -288,15 +300,28 @@ void MainWindow::handleFileDialogs() {
     }
 
     if (ImGui::BeginPopupModal("Open MIDI File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (browseDirectory_.empty()) browseDirectory_ = defaultBrowseDirectory();
+        ImGui::Text("Browse: %s", browseDirectory_.c_str());
+        if (ImGui::Button("Up")) browseDirectory_ = parentDirectory(browseDirectory_);
+        if (ImGui::BeginChild("##open_browser", ImVec2(400, 160), true)) {
+            for (const auto& entry : listDirectory(browseDirectory_)) {
+                std::string full_path = (std::filesystem::path(browseDirectory_) / entry.name).string();
+                if (entry.is_directory) {
+                    if (ImGui::Selectable(("[dir] " + entry.name).c_str())) {
+                        browseDirectory_ = full_path;
+                    }
+                } else if (ImGui::Selectable(entry.name.c_str())) {
+                    std::strncpy(filePathBuffer_, full_path.c_str(), sizeof(filePathBuffer_) - 1);
+                }
+            }
+        }
+        ImGui::EndChild();
         ImGui::Text("Enter file path:");
         ImGui::SetNextItemWidth(400);
         if (ImGui::InputText("##filepath", filePathBuffer_, sizeof(filePathBuffer_),
                             ImGuiInputTextFlags_EnterReturnsTrue)) {
             if (app_.loadFile(filePathBuffer_)) {
-                // Send program changes for all tracks
-                for (const auto& track : app_.getProject().tracks) {
-                    midiPlayer_.sendProgramChange(track.channel, track.program);
-                }
+                midiPlayer_.syncTrackPrograms(app_.getProject());
                 ImGui::CloseCurrentPopup();
             } else {
                 openErrorMessage_ = "Could not open this file. Check the path and use a type 0/1 MIDI file with PPQ timing.";
@@ -307,9 +332,7 @@ void MainWindow::handleFileDialogs() {
         ImGui::Separator();
         if (ImGui::Button("Open", ImVec2(120, 0))) {
             if (app_.loadFile(filePathBuffer_)) {
-                for (const auto& track : app_.getProject().tracks) {
-                    midiPlayer_.sendProgramChange(track.channel, track.program);
-                }
+                midiPlayer_.syncTrackPrograms(app_.getProject());
                 ImGui::CloseCurrentPopup();
             } else {
                 openErrorMessage_ = "Could not open this file. Check the path and use a type 0/1 MIDI file with PPQ timing.";
@@ -330,6 +353,22 @@ void MainWindow::handleFileDialogs() {
     }
 
     if (ImGui::BeginPopupModal("Save MIDI File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (browseDirectory_.empty()) browseDirectory_ = defaultBrowseDirectory();
+        ImGui::Text("Browse: %s", browseDirectory_.c_str());
+        if (ImGui::Button("Up")) browseDirectory_ = parentDirectory(browseDirectory_);
+        if (ImGui::BeginChild("##save_browser", ImVec2(400, 160), true)) {
+            for (const auto& entry : listDirectory(browseDirectory_)) {
+                std::string full_path = (std::filesystem::path(browseDirectory_) / entry.name).string();
+                if (entry.is_directory) {
+                    if (ImGui::Selectable(("[dir] " + entry.name).c_str())) {
+                        browseDirectory_ = full_path;
+                    }
+                } else if (ImGui::Selectable(entry.name.c_str())) {
+                    std::strncpy(filePathBuffer_, full_path.c_str(), sizeof(filePathBuffer_) - 1);
+                }
+            }
+        }
+        ImGui::EndChild();
         ImGui::Text("Enter file path:");
         ImGui::SetNextItemWidth(400);
 

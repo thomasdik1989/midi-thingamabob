@@ -63,6 +63,13 @@ void SettingsScreen::render(float width, float height) {
     ImGui::BeginChild("##settings_scroll", ImVec2(width, height - ImGui::GetCursorPosY()), false);
     ImGui::SetCursorPosX(CARD_MARGIN);
 
+    beginCard("Project", cardWidth);
+    if (ImGui::Button("New Project", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT))) {
+        app_.newProject();
+        player_.syncTrackPrograms(app_.getProject());
+    }
+    endCard();
+
     beginCard("Edit History", cardWidth);
     ImGui::BeginDisabled(!app_.canUndo());
     if (ImGui::Button("Undo", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) app_.undo();
@@ -70,6 +77,16 @@ void SettingsScreen::render(float width, float height) {
     ImGui::SameLine();
     ImGui::BeginDisabled(!app_.canRedo());
     if (ImGui::Button("Redo", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) app_.redo();
+    ImGui::EndDisabled();
+    ImGui::Spacing();
+    if (ImGui::Button("Copy", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) {
+        app_.copySelectedNotes();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!app_.hasClipboard());
+    if (ImGui::Button("Paste", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) {
+        app_.pasteNotes();
+    }
     ImGui::EndDisabled();
     endCard();
     renderTimeSignature(cardWidth);
@@ -80,6 +97,7 @@ void SettingsScreen::render(float width, float height) {
     renderSongLength(cardWidth);
     renderPatterns(cardWidth);
     renderMidiOutput(cardWidth);
+    renderSoundFont(cardWidth);
     renderExport(cardWidth);
 
     ImGui::Spacing();
@@ -416,9 +434,7 @@ void SettingsScreen::renderMidiOutput(float cardWidth) {
             player_.closeDevice();
         } else {
             if (player_.openDevice(deviceIndex - 1)) {
-                for (const auto& track : app_.getProject().tracks) {
-                    player_.sendProgramChange(track.channel, track.program);
-                }
+                player_.syncTrackPrograms(app_.getProject());
             }
         }
     }
@@ -426,12 +442,25 @@ void SettingsScreen::renderMidiOutput(float cardWidth) {
     endCard();
 }
 
+void SettingsScreen::renderSoundFont(float cardWidth) {
+    beginCard("SoundFont", cardWidth);
+    static char sf2_path[512] = {};
+    ImGui::SetNextItemWidth(cardWidth - CARD_PADDING * 2);
+    ImGui::InputText("##sf2_path", sf2_path, sizeof(sf2_path));
+    if (ImGui::Button("Load SoundFont", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT))) {
+        if (sf2_path[0] != 0) {
+            player_.loadSoundFont(sf2_path, &app_.getProject());
+        }
+    }
+    endCard();
+}
+
 void SettingsScreen::renderExport(float cardWidth) {
     beginCard("Export", cardWidth);
 
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
-    if (ImGui::Button("Export MIDI File", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT))) {
-        FileOpsMobile::saveFile(app_, "export.mid");
+    if (ImGui::Button("Export MIDI File", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT)) && fileOps_) {
+        fileOps_->saveFile(app_, "export.mid");
     }
     ImGui::PopStyleColor();
 
