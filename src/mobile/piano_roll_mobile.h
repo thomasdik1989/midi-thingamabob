@@ -2,6 +2,7 @@
 
 #include "../app.h"
 #include "../midi/midi_player.h"
+#include "../midi/piano_roll_view.h"
 #include "touch_input.h"
 #include <imgui.h>
 
@@ -12,6 +13,12 @@ public:
     PianoRollMobile(App& app, midi::MidiPlayer& player);
     void render(float width, float height);
     void processGesture(const TouchGesture& gesture);
+    bool inPianoRollArea(const TouchGesture& gesture) const;
+    void handleTapGesture(const TouchGesture& gesture);
+    void handleLongPressGesture(const TouchGesture& gesture);
+    void handleDragGesture(const TouchGesture& gesture);
+    void handlePinchGesture(const TouchGesture& gesture);
+    midi::PianoRollView viewState() const;
     void setScrollMode(bool enabled) { scrollMode_ = enabled; }
     bool isScrollMode() const { return scrollMode_; }
     void setTheme(const NineSliceTheme* theme) { theme_ = theme; }
@@ -41,6 +48,10 @@ private:
     // Auto-follow playhead
     void autoFollowPlayhead(ImVec2 canvasPos, ImVec2 canvasSize);
 
+    bool useDrumMap() const;
+    float rowHeight() const;
+    void focusDrumMap(ImVec2 canvasPos, ImVec2 canvasSize);
+
     // Track color (reused from desktop logic)
     static ImU32 getTrackColor(int trackIndex, int velocity, bool isSelected, bool isActiveTrack);
 
@@ -51,8 +62,10 @@ private:
     // View state (larger defaults for mobile)
     float pixelsPerTick_ = 0.2f;       // Horizontal zoom (2x desktop)
     float noteHeight_ = 24.0f;         // Vertical zoom (2x desktop)
+    float drumRowHeight_ = 28.0f;      // Drum map row height
     float scrollX_ = 0.0f;             // Horizontal scroll in ticks
     float scrollY_ = 60.0f * 24.0f;    // Vertical scroll (start near middle C)
+    int lastSelectedTrack_ = -1;
 
     // Drawing
     void drawRuler(ImDrawList* drawList, ImVec2 rulerPos, ImVec2 rulerSize);

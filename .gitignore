@@ -39,5 +39,12 @@ compile_commands.json
 *.tmp
 *.temp
 
-# Platform specific files
+# Android/iOS generated build output
+.gradle/
+.cxx/
+local.properties
+*.apk
+*.aab
+
 platform/*
+.cache/*

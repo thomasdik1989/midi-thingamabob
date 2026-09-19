@@ -36,6 +36,7 @@ show_help() {
     echo "  release             Build desktop (Release)"
     echo "  run [file.mid]      Build and run desktop app"
     echo "  clean               Remove all build directories"
+    echo "  test                Build and run core regression tests"
     echo ""
     echo -e "${BOLD}Mobile commands:${NC}"
     echo "  mobile              Build mobile desktop preview (SDL2 window)"
@@ -64,6 +65,26 @@ show_help() {
 }
 
 # ─── Desktop build ───────────────────────────────────────────────────────────
+
+run_tests() {
+    local build_dir="$BUILD_DIR"
+    mkdir -p "$build_dir"
+    cd "$build_dir"
+
+    info "Configuring tests ($BUILD_TYPE)..."
+    cmake "$PROJECT_DIR" \
+        -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DBUILD_TESTING=ON \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+    info "Building tests..."
+    cmake --build . --parallel
+
+    info "Running ctest..."
+    ctest --output-on-failure -C "$BUILD_TYPE"
+    ok "All tests passed"
+}
 
 build_desktop() {
     local build_dir="$BUILD_DIR"
@@ -564,6 +585,9 @@ case "$COMMAND" in
         ;;
     clean)
         clean_all
+        ;;
+    test)
+        run_tests
         ;;
     mobile)
         case "$SUBCOMMAND" in

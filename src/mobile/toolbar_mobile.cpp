@@ -90,23 +90,22 @@ void ToolbarMobile::render(float displayWidth) {
     ImGui::BeginGroup();
 
     // Open button (standalone)
-    if (themedButton("Open", ImVec2(buttonSize * 1.2f, buttonSize))) {
-        FileOpsMobile::openFile([this](const std::string& path) {
+    if (themedButton("Open", ImVec2(buttonSize * 1.2f, buttonSize)) && fileOps_) {
+        auto open = [this] { fileOps_->openFile([this](const std::string& path) {
             if (app_.loadFile(path)) {
-                for (const auto& track : app_.getProject().tracks) {
-                    player_.sendProgramChange(track.channel, track.program);
-                }
-            }
-        });
+                player_.syncTrackPrograms(app_.getProject());
+            } else if (fileSafety_) fileSafety_->showError("Could not open MIDI file. Your current project is still open.");
+        }); };
+        if (fileSafety_) fileSafety_->request(open); else open();
     }
     ImGui::SameLine();
 
     // Save button (standalone)
     if (themedButton("Save", ImVec2(buttonSize * 1.2f, buttonSize))) {
         if (!project.filepath.empty()) {
-            app_.saveFile();
+            if (!app_.saveFile() && fileSafety_) fileSafety_->showError("Save failed. Your changes are still open.");
         } else {
-            FileOpsMobile::saveFile(app_, "project.mid");
+            if (fileOps_) fileOps_->saveFile(app_, "project.mid");
         }
     }
     ImGui::SameLine();
@@ -145,8 +144,10 @@ void ToolbarMobile::render(float displayWidth) {
     int secs = static_cast<int>(seconds) % 60;
     int ms = static_cast<int>((seconds - std::floor(seconds)) * 1000);
 
+    int bar = project.tickToBar(app_.getPlayheadTick());
+    int beat = project.tickToBeatInBar(app_.getPlayheadTick());
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (buttonSize - ImGui::GetTextLineHeight()) * 0.5f);
-    ImGui::Text("%02d:%02d.%03d", minutes, secs, ms);
+    ImGui::Text("%02d:%02d.%03d  B%d.%d", minutes, secs, ms, bar, beat);
 
     ImGui::EndGroup();
 
@@ -171,6 +172,7 @@ void ToolbarMobile::render(float displayWidth) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(groupGap, 4));
     if (themedButton("-##bpm", ImVec2(buttonSize, buttonSize), ButtonGroupPos::Left)) {
+        auto transaction = app_.edit();
         project.tempo_bpm = std::max(20.0f, project.tempo_bpm - 1.0f);
         project.modified = true;
     }
@@ -180,6 +182,7 @@ void ToolbarMobile::render(float displayWidth) {
     ImGui::SameLine();
 
     if (themedButton("+##bpm", ImVec2(buttonSize, buttonSize), ButtonGroupPos::Right)) {
+        auto transaction = app_.edit();
         project.tempo_bpm = std::min(300.0f, project.tempo_bpm + 1.0f);
         project.modified = true;
     }

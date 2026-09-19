@@ -1,5 +1,4 @@
 #include "mobile_app.h"
-#include "file_ops_mobile.h"
 #include <imgui.h>
 #include <SDL.h>
 
@@ -89,7 +88,7 @@ void MobileApp::update(float deltaTime) {
     if (app_.isPlaying()) {
         app_.advancePlayhead(frameDelta);
     }
-    midiPlayer_.update(app_.getProject(), app_.getPlayheadTick(), app_.isPlaying());
+    midiPlayer_.update(app_.getProject(), app_.getPlayheadTick(), app_.isPlaying(), app_.playbackSpans());
 
     // Update touch input (detects long-press, etc.)
     touchInput_.update(deltaTime);
@@ -144,8 +143,19 @@ void MobileApp::render(float displayWidth, float displayHeight) {
         loadTheme();
     }
 
+    toolbar_.setFileSafety(&fileSafety_);
+    toolbar_.setFileOps(&fileOps_);
+    settings_.setFileOps(&fileOps_);
     swipeNav_.render(displayWidth, displayHeight);
 
-    // Render file dialogs (modal popups on top)
-    FileOpsMobile::renderDialogs();
+    fileOps_.renderDialogs();
+    renderFileSafetyMobile(fileSafety_, theme_.loaded() ? &theme_ : nullptr);
+}
+
+void MobileApp::requestClose() {
+    fileSafety_.request([this] {
+        midiPlayer_.panic();
+        app_.discardRecovery();
+        closeApproved_ = true;
+    });
 }

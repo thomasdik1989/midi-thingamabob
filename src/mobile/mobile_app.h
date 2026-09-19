@@ -9,6 +9,9 @@
 #include "track_panel_mobile.h"
 #include "settings_screen.h"
 #include "nine_slice.h"
+#include "../file_safety.h"
+#include "file_safety_mobile.h"
+#include "file_ops_mobile.h"
 
 #include <SDL.h>
 #include <chrono>
@@ -18,6 +21,8 @@ public:
     MobileApp();
     ~MobileApp();
     App& getApp() { return app_; }
+    void requestClose();
+    bool shouldClose() const { return closeApproved_; }
     void processEvent(const SDL_Event& event);
     void update(float deltaTime);
     void render(float displayWidth, float displayHeight);
@@ -26,6 +31,9 @@ private:
     void loadTheme();
 
     App app_;
+    FileSafety fileSafety_{app_};
+    FileOpsMobile fileOps_;
+    bool closeApproved_ = false;
     midi::MidiPlayer midiPlayer_;
     TouchInput touchInput_;
     SwipeNav swipeNav_;

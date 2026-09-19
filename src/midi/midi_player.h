@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "playback.h"
 #include "audio_synth.h"
 #include <RtMidi.h>
 #include <memory>
@@ -27,10 +28,11 @@ public:
     int getCurrentDevice() const { return currentDevice_; }
 
     // Load SoundFont for better audio quality
-    bool loadSoundFont(const std::string& filepath);
+    bool loadSoundFont(const std::string& filepath, const Project* project = nullptr);
 
     // Playback
-    void update(const Project& project, uint32_t currentTick, bool isPlaying);
+    void update(const Project& project, uint32_t currentTick, bool isPlaying,
+                const std::vector<PlaybackSpan>& spans = {});
     void panic(); // All notes off
 
     // Preview note (for clicking on piano roll)
@@ -39,6 +41,8 @@ public:
 
     // Send program change
     void sendProgramChange(int channel, int program);
+    void syncTrackPrograms(const Project& project);
+    void allNotesOffChannel(int channel);
 
 private:
     void sendNoteOn(int channel, int pitch, int velocity);
@@ -52,14 +56,6 @@ private:
     // External MIDI output
     std::unique_ptr<RtMidiOut> midiOut_;
     int currentDevice_ = -1;
-
-    // Track which notes are currently playing
-    struct PlayingNote {
-        int channel;
-        int pitch;
-        uint32_t endTick;
-    };
-    std::vector<PlayingNote> playingNotes_;
 
     uint32_t lastTick_ = 0;
     bool wasPlaying_ = false;

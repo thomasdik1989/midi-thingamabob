@@ -1,6 +1,7 @@
 #include "track_panel_mobile.h"
 #include "nine_slice.h"
 #include "../midi/general_midi.h"
+#include "../midi/patterns.h"
 #include <algorithm>
 #include <cmath>
 
@@ -49,22 +50,18 @@ void TrackPanelMobile::processGesture(const TouchGesture& gesture) {
             }
         }
     } else if (gesture.type == GestureType::Tap) {
-        // If delete is revealed and tap is on delete button, delete the track
-        // This is not working ATM; it worked and then I borked it.
         if (swipeDeleteRevealed_ && swipingTrackIndex_ >= 0) {
-            // Check if tap is in the delete button area (right side of card)
             if (swipingTrackIndex_ < static_cast<int>(cardBounds_.size())) {
-                auto& bounds = cardBounds_[swipingTrackIndex_];
-                if (gesture.y >= bounds.y && gesture.y < bounds.y + bounds.height) {
-                    // Check if tap is on the right (delete button area)
-                    float cardRight = ImGui::GetIO().DisplaySize.x - CARD_MARGIN;
-                    if (gesture.x >= cardRight - DELETE_BUTTON_WIDTH) {
-                        app_.removeTrack(swipingTrackIndex_);
-                        swipingTrackIndex_ = -1;
-                        swipeOffset_ = 0.0f;
-                        swipeDeleteRevealed_ = false;
-                        return;
-                    }
+                const auto& bounds = cardBounds_[swipingTrackIndex_];
+                float delete_left = bounds.x + bounds.width + swipeOffset_;
+                float delete_right = bounds.x + bounds.width;
+                if (gesture.x >= delete_left && gesture.x <= delete_right &&
+                    gesture.y >= bounds.y && gesture.y < bounds.y + bounds.height) {
+                    app_.removeTrack(swipingTrackIndex_);
+                    swipingTrackIndex_ = -1;
+                    swipeOffset_ = 0.0f;
+                    swipeDeleteRevealed_ = false;
+                    return;
                 }
             }
             // Tap elsewhere: cancel swipe
@@ -117,7 +114,7 @@ void TrackPanelMobile::renderTrackList(float width, float height) {
 
         // Record card bounds for gesture hit testing
         ImVec2 cardScreenPos = ImGui::GetCursorScreenPos();
-        cardBounds_.push_back({cardScreenPos.y, CARD_HEIGHT});
+        cardBounds_.push_back({cardScreenPos.x, cardScreenPos.y, cardWidth, CARD_HEIGHT});
 
         // Apply swipe offset if this card is being swiped
         float offsetX = (i == swipingTrackIndex_) ? swipeOffset_ : 0.0f;
@@ -162,8 +159,13 @@ void TrackPanelMobile::renderTrackList(float width, float height) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.55f, 0.85f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f);
-    if (ImGui::Button("+\nAdd Track", ImVec2(cardWidth, 70))) {
+    float halfWidth = (cardWidth - 8) * 0.5f;
+    if (ImGui::Button("+\nAdd Track", ImVec2(halfWidth, 70))) {
         app_.addTrack();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("+\nAdd Drums", ImVec2(halfWidth, 70))) {
+        app_.addDrumTrack();
     }
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
@@ -172,6 +174,10 @@ void TrackPanelMobile::renderTrackList(float width, float height) {
 void TrackPanelMobile::renderTrackEditor(float width, float height) {
     auto& project = app_.getProject();
     auto& track = project.tracks[editingTrackIndex_];
+    if (!ImGui::IsAnyItemActive()) {
+        std::strncpy(editNameBuf_, track.name.c_str(), sizeof(editNameBuf_) - 1);
+        editNameBuf_[sizeof(editNameBuf_) - 1] = 0;
+    }
 
     float padding = CARD_MARGIN;
     float cardWidth = width - padding * 2;
@@ -180,9 +186,7 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     // Title bar with back button
     ImGui::SetCursorPos(ImVec2(padding, padding));
     if (ImGui::Button("< Back", ImVec2(80, 36))) {
-        // Copy name back from edit buffer
-        track.name = editNameBuf_;
-        project.modified = true;
+        app_.endUndoGroup();
         editingTrackIndex_ = -1;
         return;
     }
@@ -207,9 +211,12 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     ImGui::Spacing();
     ImGui::SetNextItemWidth(itemWidth);
     if (ImGui::InputText("##track_name", editNameBuf_, sizeof(editNameBuf_))) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         track.name = editNameBuf_;
         project.modified = true;
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
 
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
@@ -229,12 +236,15 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     int channel = track.channel + 1;  // Display as 1-16
     ImGui::SetNextItemWidth(itemWidth);
     if (ImGui::InputInt("##channel", &channel)) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         channel = std::clamp(channel, 1, 16);
         track.channel = channel - 1;
         project.modified = true;
         // Re-send program change on the new channel
         player_.sendProgramChange(track.channel, track.program);
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
 
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
@@ -242,56 +252,70 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     ImGui::Spacing();
     ImGui::SetCursorPosX(padding);
 
-    // --- Instrument ---
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(CARD_PADDING, CARD_PADDING));
-    ImGui::BeginChild("##instrument_card", ImVec2(cardWidth, 0),
-                      ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+    if (!midi::isDrumTrack(track)) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(CARD_PADDING, CARD_PADDING));
+        ImGui::BeginChild("##instrument_card", ImVec2(cardWidth, 0),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
 
-    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.95f, 1.0f), "Instrument");
-    ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.95f, 1.0f), "Instrument");
+        ImGui::Spacing();
 
-    // Category combo
-    int category = midi::getCategoryForProgram(track.program);
-    ImGui::Text("Category:");
-    if (ThemedBeginCombo("##category", std::string(midi::getCategoryName(category)).c_str(),
-                         theme_, itemWidth)) {
-        for (int c = 0; c < 16; ++c) {
-            bool selected = (c == category);
-            if (ImGui::Selectable(std::string(midi::getCategoryName(c)).c_str(), selected)) {
-                track.program = c * 8;
-                project.modified = true;
-                player_.sendProgramChange(track.channel, track.program);
+        int category = midi::getCategoryForProgram(track.program);
+        ImGui::Text("Category:");
+        if (ThemedBeginCombo("##category", std::string(midi::getCategoryName(category)).c_str(),
+                             theme_, itemWidth)) {
+            for (int c = 0; c < 16; ++c) {
+                bool selected = (c == category);
+                if (ImGui::Selectable(std::string(midi::getCategoryName(c)).c_str(), selected)) {
+                    int newProgram = c * 8;
+                    app_.executeCommand(std::make_unique<ChangeInstrumentCommand>(
+                        app_, editingTrackIndex_, newProgram));
+                    player_.allNotesOffChannel(track.channel);
+                    player_.sendProgramChange(track.channel, newProgram);
+                }
             }
+            ThemedEndCombo(theme_);
         }
-        ThemedEndCombo(theme_);
-    }
 
-    ImGui::Spacing();
+        ImGui::Spacing();
 
-    // Instrument within category
-    ImGui::Text("Sound:");
-    if (ThemedBeginCombo("##instrument", std::string(midi::getInstrumentName(track.program)).c_str(),
-                         theme_, itemWidth)) {
-        int baseProgram = (track.program / 8) * 8;
-        for (int i = 0; i < 8; ++i) {
-            int prog = baseProgram + i;
-            bool selected = (prog == track.program);
-            if (ImGui::Selectable(std::string(midi::getInstrumentName(prog)).c_str(), selected)) {
-                track.program = prog;
-                project.modified = true;
-                player_.sendProgramChange(track.channel, track.program);
+        ImGui::Text("Sound:");
+        if (ThemedBeginCombo("##instrument", std::string(midi::getInstrumentName(track.program)).c_str(),
+                             theme_, itemWidth)) {
+            int baseProgram = (track.program / 8) * 8;
+            for (int i = 0; i < 8; ++i) {
+                int prog = baseProgram + i;
+                bool selected = (prog == track.program);
+                if (ImGui::Selectable(std::string(midi::getInstrumentName(prog)).c_str(), selected)) {
+                    app_.executeCommand(std::make_unique<ChangeInstrumentCommand>(
+                        app_, editingTrackIndex_, prog));
+                    player_.allNotesOffChannel(track.channel);
+                    player_.sendProgramChange(track.channel, prog);
+                }
             }
+            ThemedEndCombo(theme_);
         }
-        ThemedEndCombo(theme_);
-    }
 
-    ImGui::EndChild();
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-    ImGui::SetCursorPosX(padding);
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(padding);
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(CARD_PADDING, CARD_PADDING));
+        ImGui::BeginChild("##drum_card", ImVec2(cardWidth, 0),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.95f, 1.0f), "Drums (Ch 10)");
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(padding);
+    }
 
     // --- Volume & Pan ---
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
@@ -308,10 +332,13 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     ImGui::SetNextItemWidth(itemWidth);
     float vol = track.volume;
     if (ImGui::SliderFloat("##edit_vol", &vol, 0.0f, 1.0f, "%.0f%%")) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         track.volume = vol;
         player_.getAudioSynth().setChannelVolume(track.channel, vol);
         project.modified = true;
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
 
     ImGui::Spacing();
 
@@ -324,9 +351,12 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     snprintf(panFmt, sizeof(panFmt), "%s %.0f%%", panLabel,
              std::abs(pan - 0.5f) * 200.0f);
     if (ImGui::SliderFloat("##edit_pan", &pan, 0.0f, 1.0f, panFmt)) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         track.pan = pan;
         project.modified = true;
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
 
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
@@ -348,6 +378,7 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     bool muted = track.muted;
     if (muted) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
     if (ImGui::Button(muted ? "Unmute" : "Mute", ImVec2(halfWidth, 44))) {
+        auto transaction = app_.edit();
         track.muted = !track.muted;
     }
     if (muted) ImGui::PopStyleColor();
@@ -357,6 +388,7 @@ void TrackPanelMobile::renderTrackEditor(float width, float height) {
     bool solo = track.solo;
     if (solo) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
     if (ImGui::Button(solo ? "Unsolo" : "Solo", ImVec2(halfWidth, 44))) {
+        auto transaction = app_.edit();
         track.solo = !track.solo;
     }
     if (solo) ImGui::PopStyleColor();
@@ -416,9 +448,13 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
 
     // Instrument name + channel (smaller, dimmer)
     char instrLabel[128];
-    auto instrName = midi::getInstrumentName(track.program);
-    snprintf(instrLabel, sizeof(instrLabel), "%.*s (Ch.%d)",
-             static_cast<int>(instrName.size()), instrName.data(), track.channel + 1);
+    if (midi::isDrumTrack(track)) {
+        snprintf(instrLabel, sizeof(instrLabel), "Drums (Ch.%d)", track.channel + 1);
+    } else {
+        auto instrName = midi::getInstrumentName(track.program);
+        snprintf(instrLabel, sizeof(instrLabel), "%.*s (Ch.%d)",
+                 static_cast<int>(instrName.size()), instrName.data(), track.channel + 1);
+    }
     drawList->AddText(
         ImVec2(textStartX, cardPos.y + CARD_PADDING + 22),
         IM_COL32(150, 150, 160, 255), instrLabel
@@ -437,6 +473,7 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
     }
     if (ImGui::Button("M", ImVec2(btnSize, btnSize))) {
+        auto transaction = app_.edit();
         track.muted = !track.muted;
         // Select this track on interaction
         app_.setSelectedTrack(index);
@@ -452,6 +489,7 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
     }
     if (ImGui::Button("S", ImVec2(btnSize, btnSize))) {
+        auto transaction = app_.edit();
         track.solo = !track.solo;
         app_.setSelectedTrack(index);
     }
@@ -486,10 +524,13 @@ void TrackPanelMobile::renderTrackCard(int index, midi::Track& track, float card
     char volLabel[16];
     snprintf(volLabel, sizeof(volLabel), "##vol_%d", index);
     if (ImGui::SliderFloat(volLabel, &vol, 0.0f, 1.0f, "%.0f%%")) {
+        app_.beginUndoGroup();
+        auto transaction = app_.edit();
         track.volume = vol;
         player_.getAudioSynth().setChannelVolume(track.channel, vol);
         project.modified = true;
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) app_.endUndoGroup();
 
     ImGui::PopStyleColor(3);
 

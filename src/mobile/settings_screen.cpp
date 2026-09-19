@@ -1,6 +1,8 @@
 #include "settings_screen.h"
 #include "nine_slice.h"
 #include "file_ops_mobile.h"
+#include "../midi/harmony.h"
+#include "../midi/patterns.h"
 #include "../midi/types.h"
 #include <algorithm>
 #include <cmath>
@@ -61,11 +63,41 @@ void SettingsScreen::render(float width, float height) {
     ImGui::BeginChild("##settings_scroll", ImVec2(width, height - ImGui::GetCursorPosY()), false);
     ImGui::SetCursorPosX(CARD_MARGIN);
 
+    beginCard("Project", cardWidth);
+    if (ImGui::Button("New Project", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT))) {
+        app_.newProject();
+        player_.syncTrackPrograms(app_.getProject());
+    }
+    endCard();
+
+    beginCard("Edit History", cardWidth);
+    ImGui::BeginDisabled(!app_.canUndo());
+    if (ImGui::Button("Undo", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) app_.undo();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!app_.canRedo());
+    if (ImGui::Button("Redo", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) app_.redo();
+    ImGui::EndDisabled();
+    ImGui::Spacing();
+    if (ImGui::Button("Copy", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) {
+        app_.copySelectedNotes();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!app_.hasClipboard());
+    if (ImGui::Button("Paste", ImVec2((cardWidth - CARD_PADDING * 2 - 8) / 2, BUTTON_HEIGHT))) {
+        app_.pasteNotes();
+    }
+    ImGui::EndDisabled();
+    endCard();
     renderTimeSignature(cardWidth);
     renderLoopRegion(cardWidth);
     renderMasterVolume(cardWidth);
     renderQuantize(cardWidth);
+    renderHarmony(cardWidth);
+    renderSongLength(cardWidth);
+    renderPatterns(cardWidth);
     renderMidiOutput(cardWidth);
+    renderSoundFont(cardWidth);
     renderExport(cardWidth);
 
     ImGui::Spacing();
@@ -95,6 +127,7 @@ void SettingsScreen::renderTimeSignature(float cardWidth) {
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.65f, 1.0f), "Beats:");
 
     if (ImGui::Button("-##beats", ImVec2(btnW, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         project.beats_per_bar = std::max(1, project.beats_per_bar - 1);
         project.modified = true;
     }
@@ -108,6 +141,7 @@ void SettingsScreen::renderTimeSignature(float cardWidth) {
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (BUTTON_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f);
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (numW - numTextW) * 0.5f);
     if (ImGui::Button("+##beats", ImVec2(btnW, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         project.beats_per_bar = std::min(16, project.beats_per_bar + 1);
         project.modified = true;
     }
@@ -129,6 +163,7 @@ void SettingsScreen::renderTimeSignature(float cardWidth) {
     }
 
     if (ImGui::Button("-##unit", ImVec2(btnW, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         currentIdx = std::max(0, currentIdx - 1);
         project.beat_unit = beatUnits[currentIdx];
         project.modified = true;
@@ -141,6 +176,7 @@ void SettingsScreen::renderTimeSignature(float cardWidth) {
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (BUTTON_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f);
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (numW - numTextW) * 0.5f);
     if (ImGui::Button("+##unit", ImVec2(btnW, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         currentIdx = std::min(3, currentIdx + 1);
         project.beat_unit = beatUnits[currentIdx];
         project.modified = true;
@@ -162,6 +198,7 @@ void SettingsScreen::renderLoopRegion(float cardWidth) {
     ImGui::SameLine(cardWidth - CARD_PADDING * 2 - 50);
     bool loopEnabled = project.loop_enabled;
     if (ImGui::Checkbox("##loop_enabled", &loopEnabled)) {
+        auto transaction = app_.edit();
         project.loop_enabled = loopEnabled;
     }
 
@@ -181,6 +218,7 @@ void SettingsScreen::renderLoopRegion(float cardWidth) {
     ImGui::Text("Start:");
     ImGui::SameLine();
     if (ImGui::Button("-##loopstart", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         startBar = std::max(1, startBar - 1);
         project.loop_start = static_cast<uint32_t>((startBar - 1) * ticksPerBar);
     }
@@ -188,6 +226,7 @@ void SettingsScreen::renderLoopRegion(float cardWidth) {
     ImGui::Text("Bar %d", startBar);
     ImGui::SameLine();
     if (ImGui::Button("+##loopstart", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         startBar++;
         project.loop_start = static_cast<uint32_t>((startBar - 1) * ticksPerBar);
     }
@@ -197,6 +236,7 @@ void SettingsScreen::renderLoopRegion(float cardWidth) {
     ImGui::Text("End:  ");
     ImGui::SameLine();
     if (ImGui::Button("-##loopend", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         endBar = std::max(startBar + 1, endBar - 1);
         project.loop_end = static_cast<uint32_t>((endBar - 1) * ticksPerBar);
     }
@@ -204,6 +244,7 @@ void SettingsScreen::renderLoopRegion(float cardWidth) {
     ImGui::Text("Bar %d", endBar);
     ImGui::SameLine();
     if (ImGui::Button("+##loopend", ImVec2(BUTTON_HEIGHT, BUTTON_HEIGHT))) {
+        auto transaction = app_.edit();
         endBar++;
         project.loop_end = static_cast<uint32_t>((endBar - 1) * ticksPerBar);
     }
@@ -280,6 +321,101 @@ void SettingsScreen::renderQuantize(float cardWidth) {
     endCard();
 }
 
+void SettingsScreen::renderHarmony(float cardWidth) {
+    beginCard("Harmony Stamp", cardWidth);
+
+    float item_width = cardWidth - CARD_PADDING * 2;
+    int stamp_index = static_cast<int>(app_.getHarmonyKind());
+    if (stamp_index < 0 || stamp_index >= midi::harmonyKindCount()) stamp_index = 0;
+
+    static const char* stamp_names[] = {
+        "Single", "Octave", "5th Below", "3rd Below", "6th Below", "Triad Below"
+    };
+    if (ThemedCombo("##stamp_mobile", &stamp_index, stamp_names,
+                    midi::harmonyKindCount(), theme_, item_width)) {
+        app_.setHarmonyKind(static_cast<midi::HarmonyKind>(stamp_index));
+    }
+
+    ImGui::Spacing();
+
+    static const char* key_names[] = {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+    int tonic = app_.getHarmonyTonic();
+    if (ThemedCombo("##key_mobile", &tonic, key_names, 12, theme_, item_width)) {
+        app_.setHarmonyTonic(tonic);
+    }
+
+    ImGui::Spacing();
+
+    bool minor = app_.getHarmonyMinor();
+    if (ImGui::Checkbox("Minor key", &minor)) {
+        app_.setHarmonyMinor(minor);
+    }
+
+    ImGui::Spacing();
+    if (ImGui::Button("Harmonize Selection", ImVec2(item_width, BUTTON_HEIGHT))) {
+        app_.harmonizeSelectedNotes();
+    }
+
+    endCard();
+}
+
+void SettingsScreen::renderSongLength(float cardWidth) {
+    beginCard("Song Length", cardWidth);
+
+    float item_width = cardWidth - CARD_PADDING * 2;
+    int bars = app_.getLengthBars();
+    ImGui::Text("Bars:");
+    ImGui::SetNextItemWidth(item_width);
+    if (ImGui::InputInt("##song_length", &bars)) {
+        app_.setLengthBars(bars);
+    }
+
+    ImGui::Spacing();
+    float preset_width = (item_width - 12) / 4.0f;
+    if (ImGui::Button("16", ImVec2(preset_width, BUTTON_HEIGHT))) app_.setLengthBars(16);
+    ImGui::SameLine();
+    if (ImGui::Button("32", ImVec2(preset_width, BUTTON_HEIGHT))) app_.setLengthBars(32);
+    ImGui::SameLine();
+    if (ImGui::Button("64", ImVec2(preset_width, BUTTON_HEIGHT))) app_.setLengthBars(64);
+    ImGui::SameLine();
+    if (ImGui::Button("128", ImVec2(preset_width, BUTTON_HEIGHT))) app_.setLengthBars(128);
+
+    endCard();
+}
+
+void SettingsScreen::renderPatterns(float cardWidth) {
+    beginCard("Insert Beat", cardWidth);
+
+    float item_width = cardWidth - CARD_PADDING * 2;
+    static int selected_groove = 0;
+    static int selected_bars = 4;
+
+    std::vector<const char*> groove_names;
+    for (int i = 0; i < midi::drumGrooveCount(); ++i) {
+        groove_names.push_back(midi::getDrumGroove(i).name);
+    }
+    if (ThemedCombo("##groove_mobile", &selected_groove, groove_names.data(),
+                     static_cast<int>(groove_names.size()), theme_, item_width)) {
+    }
+
+    ImGui::Spacing();
+
+    static const char* bar_labels[] = {"1 bar", "2 bars", "4 bars", "8 bars", "16 bars", "32 bars", "64 bars", "To song end"};
+    static const int bar_values[] = {1, 2, 4, 8, 16, 32, 64, 0};
+    if (ThemedCombo("##bars_mobile", &selected_bars, bar_labels, 8, theme_, item_width)) {
+    }
+    selected_bars = std::clamp(selected_bars, 0, 7);
+
+    ImGui::Spacing();
+    if (ImGui::Button("Insert Beat", ImVec2(item_width, BUTTON_HEIGHT))) {
+        app_.insertDrumGroove(selected_groove, bar_values[selected_bars]);
+    }
+
+    endCard();
+}
+
 void SettingsScreen::renderMidiOutput(float cardWidth) {
     beginCard("MIDI Output", cardWidth);
 
@@ -298,9 +434,7 @@ void SettingsScreen::renderMidiOutput(float cardWidth) {
             player_.closeDevice();
         } else {
             if (player_.openDevice(deviceIndex - 1)) {
-                for (const auto& track : app_.getProject().tracks) {
-                    player_.sendProgramChange(track.channel, track.program);
-                }
+                player_.syncTrackPrograms(app_.getProject());
             }
         }
     }
@@ -308,12 +442,25 @@ void SettingsScreen::renderMidiOutput(float cardWidth) {
     endCard();
 }
 
+void SettingsScreen::renderSoundFont(float cardWidth) {
+    beginCard("SoundFont", cardWidth);
+    static char sf2_path[512] = {};
+    ImGui::SetNextItemWidth(cardWidth - CARD_PADDING * 2);
+    ImGui::InputText("##sf2_path", sf2_path, sizeof(sf2_path));
+    if (ImGui::Button("Load SoundFont", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT))) {
+        if (sf2_path[0] != 0) {
+            player_.loadSoundFont(sf2_path, &app_.getProject());
+        }
+    }
+    endCard();
+}
+
 void SettingsScreen::renderExport(float cardWidth) {
     beginCard("Export", cardWidth);
 
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
-    if (ImGui::Button("Export MIDI File", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT))) {
-        FileOpsMobile::saveFile(app_, "export.mid");
+    if (ImGui::Button("Export MIDI File", ImVec2(cardWidth - CARD_PADDING * 2, BUTTON_HEIGHT)) && fileOps_) {
+        fileOps_->saveFile(app_, "export.mid");
     }
     ImGui::PopStyleColor();
 

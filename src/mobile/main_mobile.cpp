@@ -181,6 +181,11 @@ int main(int argc, char* argv[]) {
 
     // Initialize mobile application
     MobileApp mobileApp;
+    char* statePath = SDL_GetPrefPath("MidiEditor", "MidiEditor");
+    if (statePath) {
+        mobileApp.getApp().configureRecovery(std::string(statePath) + "recovery");
+        SDL_free(statePath);
+    }
 
     // Load file from command line if provided (desktop preview)
     // You can try this when using the build.sh.
@@ -190,7 +195,7 @@ int main(int argc, char* argv[]) {
 
 
     bool running = true;
-    while (running) {
+    while (running && !mobileApp.shouldClose()) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             // On Android we need to scale mouse/button coordinates from physical
@@ -216,8 +221,18 @@ int main(int argc, char* argv[]) {
             ImGui_ImplSDL2_ProcessEvent(&event);
 
             if (event.type == SDL_QUIT) {
-                running = false;
+                mobileApp.requestClose();
             }
+
+            if (event.type == SDL_WINDOWEVENT &&
+                (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
+                // Layout follows the new logical size on the next frame.
+                // Placeholder so I don't forget or need to read my notes.
+            }
+
+            if (event.type == SDL_APP_WILLENTERBACKGROUND || event.type == SDL_APP_TERMINATING)
+                mobileApp.getApp().autosave();
 
             // Always forward touch events to the gesture system so it can
             // track finger state. Popup-aware filtering happens later in
