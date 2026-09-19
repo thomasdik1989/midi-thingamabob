@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
 jobs:
   build:
     strategy:
@@ -55,14 +58,11 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
-        run: |
-          cmake -B build `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -B build
 
       - name: Build (Linux/macOS)
         if: runner.os != 'Windows'
@@ -131,8 +131,7 @@ jobs:
             -DBUILD_MOBILE=ON \
             -DMOBILE_PLATFORM=iOS \
             -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
           cmake --build build-mobile --config Release -- -sdk iphonesimulator -arch arm64 CODE_SIGNING_ALLOWED=NO
 
       - name: Prepare iOS artifact
@@ -143,18 +142,31 @@ jobs:
 
       - name: Setup Android SDK/NDK
         if: matrix.platform == 'Android'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Build Android
         if: matrix.platform == 'Android'
         run: |
+          ndk_home="${ANDROID_NDK_HOME:-}"
+          if [ -z "$ndk_home" ]; then
+            ndk_home="${ANDROID_NDK_LATEST_HOME:-}"
+          fi
+          if [ -z "$ndk_home" ] && [ -d "${ANDROID_HOME}/ndk" ]; then
+            ndk_home="$(ls -1 "${ANDROID_HOME}/ndk" | sort -V | tail -1)"
+            ndk_home="${ANDROID_HOME}/ndk/${ndk_home}"
+          fi
+          if [ -z "$ndk_home" ]; then
+            echo "Android NDK not found (ANDROID_NDK_HOME, ANDROID_NDK_LATEST_HOME, or ANDROID_HOME/ndk)"
+            exit 1
+          fi
           cmake -B build-mobile \
             -DBUILD_MOBILE=ON \
             -DMOBILE_PLATFORM=Android \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE="$ndk_home/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+            -DANDROID_PLATFORM=android-24
           cmake --build build-mobile --parallel
 
       - name: Prepare Android artifact
